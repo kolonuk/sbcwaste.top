@@ -1,0 +1,125 @@
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+
+	//"cloud.google.com/go/firestore"
+
+	"fmt"
+	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/gocolly/colly/v2"
+)
+
+type Collection struct {
+	Type                string   `json:"type"`
+	NextCollectionDate  string   `json:"nextCollectionDate"`
+	FollowingThreeDates []string `json:"followingThreeDates"`
+	IconDataURI         string   `json:"iconDataURI"`
+}
+
+type Collections struct {
+	Collections []Collection `json:"collections"`
+}
+
+func WasteCollection(w http.ResponseWriter, r *http.Request) {
+	// Get UPRN from the query parameters
+	UPRN := r.URL.Query().Get("UPRN")
+	if UPRN == "" {
+		http.Error(w, "UPRN not provided", http.StatusBadRequest)
+		return
+	}
+	log.Default().Printf("UPRN: %s", UPRN)
+	var err error
+	var dateLayout string = "Monday, 2 January 2006"
+
+	//ctx := context.Background()
+	// client, err := firestore.NewClient(ctx, "sbcwaste")
+	// if err != nil {
+	// 	log.Fatalf("Failed to create Firestore client: %v", err)
+	// }
+	// defer client.Close()
+
+	// doc, err := client.Collection("caches").Doc(UPRN).Get(ctx)
+	var collections Collections
+	// if err != nil {
+	// 	if status.Code(err) != codes.NotFound {
+	// 		log.Fatalf("Failed to get cache from Firestore: %v", err)
+	// 	}
+	// } else {
+	// 	if time.Since(doc.Data()["timestamp"].(time.Time)) < 24*time.Hour {
+	// 		collections = doc.Data()["data"].(Collections)
+	// 		jsonOutput, _ := json.MarshalIndent(collections, "", "  ")
+	// 		w.Header().Set("Content-Type", "application/json")
+	// 		w.Write(jsonOutput)
+	// 		return
+	// 	}
+	// }
+
+	c := colly.NewCollector()
+
+	c.OnHTML("div.bin-collection-content", func(e *colly.HTMLElement) {
+		var collection Collection
+
+		//collection.Type = e.DOM.Find("div.bin-icons").Attr("class")
+
+		collection.Type = e.DOM.Find("div.content-left").Find("h3").Text()
+		log.Default().Printf("Type: %s", collection.Type)
+
+		//collection.NextCollectionDate = e.DOM.Find("span.nextCollectionDate").Text()
+		date, err := time.Parse(dateLayout, e.DOM.Find("span.nextCollectionDate").Text())
+		if err != nil {
+			fmt.Println("Error parsing date (1):", err)
+			return
+		}
+		collection.NextCollectionDate = date.Format("2006-01-02")
+		log.Default().Printf("NextCollectionDate: %s", collection.NextCollectionDate)
+
+		e.DOM.Find("h3:contains('Your following three collections')").Next().Find("span").Each(func(_ int, s *goquery.Selection) {
+			//collection.FollowingThreeDates = append(collection.FollowingThreeDates, strings.TrimSpace(s.Text()))
+
+			date, err := time.Parse(dateLayout, strings.TrimSpace(s.Text()))
+			if err != nil {
+				fmt.Println("Error parsing date (2):", err)
+				return
+			}
+			collection.FollowingThreeDates = append(collection.FollowingThreeDates, date.Format("2006-01-02"))
+			log.Default().Printf("FollowingThreeDates: %s", collection.FollowingThreeDates)
+		})
+
+		// iconClass, _ := e.DOM.Find("div.bin-icons").Attr("class")
+		// collection.IconDataURI = getIconDataURI(iconClass)
+
+		collections.Collections = append(collections.Collections, collection)
+	})
+
+	err = c.Visit("https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?UPRN=" + UPRN + "+&uprnSubmit=Yes")
+	if err != nil {
+		log.Fatalf("Failed to visit the webpage: %v", err)
+	}
+
+	// _, err = client.Collection("caches").Doc(UPRN).Set(ctx, map[string]interface{}{
+	// 	"data":      collections,
+	// 	"timestamp": firestore.ServerTimestamp,
+	// })
+	// if err != nil {
+	// 	log.Fatalf("Failed to set cache in Firestore: %v", err)
+	// }
+
+	jsonOutput, err := json.MarshalIndent(collections, "", "  ")
+	if err != nil {
+		log.Fatalf("Failed to marshal JSON: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonOutput)
+}
+
+// func getIconDataURI(iconClass string) string {
+// 	// Your implementation here
+// 	return ""
+// }

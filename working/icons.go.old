@@ -1,0 +1,100 @@
+package main
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/chromedp/chromedp"
+)
+
+func main() {
+	// Create context
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	// URL to scrape
+	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?UPRN=10008541132|36+Langton+Park,+Wroughton,+Swindon,++SN4+0QW+&uprnSubmit=Yes"
+
+	// Navigate to the URL
+	var res string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.bin-icons`, chromedp.ByQuery),
+		// Evaluate JavaScript to get the background-image URLs
+		chromedp.Evaluate(`
+			(function() {
+				let images = [];
+				let bins = document.querySelectorAll('.bin-icons');
+				bins.forEach(bin => {
+					let style = window.getComputedStyle(bin);
+					let bgImage = style.getPropertyValue('background-image');
+					if (bgImage && bgImage.startsWith('url("')) {
+						bgImage = bgImage.slice(5, -2); // Remove 'url("' and '")'
+						images.push(bgImage);
+					}
+				});
+				return images.join('\n');
+			})()
+		`, &res),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Split the result into individual image URLs
+	imageUrls := strings.Split(strings.TrimSpace(res), "\n")
+
+	fmt.Println("Background images found in .bin-icons divs:")
+
+	// Fetch each image, convert it to base64, and print the data URI
+	for _, imageUrl := range imageUrls {
+		if imageUrl == "" {
+			continue
+		}
+		base64URI, err := convertImageToBase64(imageUrl)
+		if err != nil {
+			log.Printf("Failed to convert image %s: %v\n", imageUrl, err)
+			continue
+		}
+		fmt.Printf("Image URL: %s\n\n", imageUrl)
+		if false {
+			fmt.Printf("Base64 URI: %s\n\n", base64URI)
+		}
+	}
+}
+
+// convertImageToBase64 fetches an image from a URL and converts it to a base64 data URI string
+func convertImageToBase64(imageUrl string) (string, error) {
+	// Fetch the image
+	resp, err := http.Get(imageUrl)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch image: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Read the image data
+	imageData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read image data: %v", err)
+	}
+
+	// Determine the content type
+	contentType := http.DetectContentType(imageData)
+
+	// Encode the image data to base64
+	base64Data := base64.StdEncoding.EncodeToString(imageData)
+
+	// Format as data URI
+	base64URI := fmt.Sprintf("data:%s;base64,%s", contentType, base64Data)
+
+	return base64URI, nil
+}
