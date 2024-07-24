@@ -9,6 +9,10 @@ echo y|gcloud services enable run.googleapis.com
 echo y|gcloud services enable secretmanager.googleapis.com
 echo y|gcloud services enable iamcredentials.googleapis.com
 
+gcloud iam service-accounts create "${PROJECT_ID}" \
+    --description="${PROJECT_ID}_sa" \
+    --project="${PROJECT_ID}"
+    
 gcloud iam workload-identity-pools create "github" \
   --project="${PROJECT_ID}" \
   --location="global" \
@@ -53,11 +57,11 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 
 #Create GitHub secrets for WIF_PROVIDER and WIF_SERVICE_ACCOUNT
 echo In your Github project, create the following secrets:
-echo.
+echo
 echo WIF_PROVIDER: $WIPROVIDER
-echo WIF_SERVICE_ACCOUNT: $WIPOOL@$PROJECT_ID.iam.gserviceaccount.com
-echo.
-
+echo WIF_SERVICE_ACCOUNT: $PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com
+echo
+gcloud iam service-accounts list --project="${PROJECT_ID}"
 
 
 
