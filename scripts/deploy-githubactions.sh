@@ -36,6 +36,7 @@ WIPROVIDER=$(gcloud iam workload-identity-pools providers describe "my-repo" \
   --workload-identity-pool="${WIP_NAME}" \
   --format="value(name)")
 
+## Create service account and assign roles
 gcloud iam service-accounts create "${PROJECT_ID}" \
     --description="${PROJECT_ID}_sa" \
     --project="${PROJECT_ID}"
@@ -50,31 +51,34 @@ gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.i
     --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
     --project=${PROJECT_ID} > /dev/null
 
-# Grant roles/run.admin
+# gcloud artifacts repositories add-iam-policy-binding ${PROJECT_ID} \
+#   --location=europe-west1 \
+#   --member="serviceAccount:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
+#   --role="roles/artifactregistry.writer" \
+#   --project=sbcwaste
+
+## Grant roles to project IAM
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/run.admin" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
   --quiet > /dev/null
 
-# Grant roles/iam.serviceAccountUser
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/iam.serviceAccountUser" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
   --quiet > /dev/null
 
-# Grant roles/artifactregistry.admin
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/artifactregistry.admin" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
   --quiet > /dev/null
 
-# Grant roles/artifactregistry.admin
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
   --quiet > /dev/null
 
-#Create GitHub secrets for WIF_PROVIDER and WIF_SERVICE_ACCOUNT
+## Display secrets required for Github actions
 echo
 echo
 echo In your Github project, create the following secrets:
@@ -82,6 +86,6 @@ echo
 echo WIF_PROVIDER: $WIPROVIDER
 echo WIF_SERVICE_ACCOUNT: $PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com
 echo
-gcloud iam service-accounts list --filter="email:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
-gcloud projects get-iam-policy "${PROJECT_ID}" --format=json | jq '.bindings[] | select(.members[] | contains("serviceAccount:$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com"))'
+#gcloud iam service-accounts list --filter="email:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
+#gcloud projects get-iam-policy "${PROJECT_ID}" --format=json | jq '.bindings[] | select(.members[] | contains("serviceAccount:$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com"))'
 
