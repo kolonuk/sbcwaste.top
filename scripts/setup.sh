@@ -26,6 +26,7 @@ sudo apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
+    jq \
     chromium
 
 # setup google cloud sdk
