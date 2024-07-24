@@ -55,6 +55,11 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/artifactregistry.admin" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}"
 
+# Grant roles/artifactregistry.admin
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}"
+
 #Create GitHub secrets for WIF_PROVIDER and WIF_SERVICE_ACCOUNT
 echo In your Github project, create the following secrets:
 echo
