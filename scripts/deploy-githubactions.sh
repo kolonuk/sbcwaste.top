@@ -6,7 +6,8 @@ REPO_NAME="kolonuk/sbcwaste.top"
 
 echo y|gcloud services enable artifactregistry.googleapis.com
 echo y|gcloud services enable run.googleapis.com
-echo Y|gcloud services enable secretmanager.googleapis.com
+echo y|gcloud services enable secretmanager.googleapis.com
+echo y|gcloud services enable iamcredentials.googleapis.com
 
 gcloud iam workload-identity-pools create "github" \
   --project="${PROJECT_ID}" \

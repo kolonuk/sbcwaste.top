@@ -69,8 +69,10 @@ jobs:
       # debug action to show the secrets to log
       - name: Show secrets
         run: |
-          echo ${{ secrets.WIF_PROVIDER }}
-          echo ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          var1=${{ secrets.WIF_PROVIDER }}
+          var2=${{ secrets.WIF_SERVICE_ACCOUNT }}
+          echo $var1
+          echo $var2
 
       - name: Google Auth
         id: auth
