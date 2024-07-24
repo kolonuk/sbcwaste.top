@@ -5,6 +5,8 @@ GITHUB_ORG="kolonuk"      # github username, or your org name if part of an org
 REPO_NAME="kolonuk/sbcwaste.top"
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
 WIP_NAME="github"
+ARTIFACTORY="eu-docker-repo"
+ARTIFACTORY_LOCATION="europe-west1"
 
 echo y|gcloud services enable artifactregistry.googleapis.com
 echo y|gcloud services enable run.googleapis.com
@@ -51,11 +53,12 @@ gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.i
     --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
     --project=${PROJECT_ID} > /dev/null
 
-# gcloud artifacts repositories add-iam-policy-binding ${PROJECT_ID} \
-#   --location=europe-west1 \
-#   --member="serviceAccount:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
-#   --role="roles/artifactregistry.writer" \
-#   --project=sbcwaste
+## Grant roles to Artifact Registry
+gcloud artifacts repositories add-iam-policy-binding "${ARTIFACTORY}" \
+  --location=${ARTIFACTORY_LOCATION} \
+  --member="serviceAccount:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --project=${PROJECT_ID} > /dev/null
 
 ## Grant roles to project IAM
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -76,6 +79,11 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
+  --quiet > /dev/null
+
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/run.admin" \
   --quiet > /dev/null
 
 ## Display secrets required for Github actions
