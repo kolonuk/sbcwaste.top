@@ -38,3 +38,7 @@ You can see the Cloud Run instance here: https://console.cloud.google.com/run
 You can see the Artifactory repo here: https://console.cloud.google.com/artifacts
 
 
+Deploy Github actions
+1. Add the standard github actions workflow to your project ()
+2. Create Workload Identity Federation (see https://github.com/google-github-actions/auth?tab=readme-ov-file#preferred-direct-workload-identity-federation) (run deploy-githubactions.sh)
+3. 

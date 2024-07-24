@@ -25,6 +25,8 @@ docker build -t europe-west1-docker.pkg.dev/sbcwaste/eu-docker-repo/sbcwaste .
 docker push europe-west1-docker.pkg.dev/sbcwaste/eu-docker-repo/sbcwaste
 
 # deploy the docker image to cloud run
+echo y|gcloud services enable run.googleapis.com
+
 echo y|gcloud run deploy sbcwaste --image europe-west1-docker.pkg.dev/sbcwaste/eu-docker-repo/sbcwaste --platform managed --region europe-west1
 
 # get the cloud run domain name from the deployment (not the url)
@@ -102,21 +104,21 @@ gcloud dns record-sets transaction execute --zone=sbcwaste-zone
 
 exit 0
 
-# redirect the domain to the service URL (TLD)
-gcloud dns record-sets transaction abort --zone=sbcwaste-zone
-gcloud dns record-sets transaction start --zone=sbcwaste-zone --project=sbcwaste
-# List and remove all CNAME records for www.sbcwaste.top.
-gcloud dns record-sets list --zone=sbcwaste-zone --name="www.sbcwaste.top." --type=CNAME --format="value(name,ttl,rrdatas[0])" | while read -r name ttl rrdata; do
-    gcloud dns record-sets transaction remove --name="$name" --type=CNAME --ttl="$ttl" --zone=sbcwaste-zone "$rrdata"
-done
-gcloud dns record-sets transaction add $DOMAIN_NAME --name="www.sbcwaste.top." --type=CNAME --ttl=300 --zone=sbcwaste-zone
-gcloud dns record-sets transaction execute --zone=sbcwaste-zone
+# # redirect the domain to the service URL (TLD)
+# gcloud dns record-sets transaction abort --zone=sbcwaste-zone
+# gcloud dns record-sets transaction start --zone=sbcwaste-zone --project=sbcwaste
+# # List and remove all CNAME records for www.sbcwaste.top.
+# gcloud dns record-sets list --zone=sbcwaste-zone --name="www.sbcwaste.top." --type=CNAME --format="value(name,ttl,rrdatas[0])" | while read -r name ttl rrdata; do
+#     gcloud dns record-sets transaction remove --name="$name" --type=CNAME --ttl="$ttl" --zone=sbcwaste-zone "$rrdata"
+# done
+# gcloud dns record-sets transaction add $DOMAIN_NAME --name="www.sbcwaste.top." --type=CNAME --ttl=300 --zone=sbcwaste-zone
+# gcloud dns record-sets transaction execute --zone=sbcwaste-zone
 
-# abandon the transaction
-#gcloud dns record-sets transaction abort --zone=sbcwaste-zone
+# # abandon the transaction
+# #gcloud dns record-sets transaction abort --zone=sbcwaste-zone
 
-# do the TLD redirect to the cname www sub domain
-echo y|gcloud services enable cloudbuild.googleapis.com
-echo y|gcloud functions delete redirect --region=europe-west1 --gen2
-gcloud functions deploy redirect --source=./redirect --runtime nodejs20 --trigger-http --allow-unauthenticated --region=europe-west1 --gen2 --entry-point=redirectToWWW
+# # do the TLD redirect to the cname www sub domain
+# echo y|gcloud services enable cloudbuild.googleapis.com
+# echo y|gcloud functions delete redirect --region=europe-west1 --gen2
+# gcloud functions deploy redirect --source=./redirect --runtime nodejs20 --trigger-http --allow-unauthenticated --region=europe-west1 --gen2 --entry-point=redirectToWWW
 
