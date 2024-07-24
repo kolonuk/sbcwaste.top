@@ -4,7 +4,7 @@ PROJECT_ID="sbcwaste"
 GITHUB_ORG="kolonuk"      # github username, or your org name if part of an org
 REPO_NAME="kolonuk/sbcwaste.top"
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
-WIP_NAME="githubtest1"
+WIP_NAME="github"
 
 echo y|gcloud services enable artifactregistry.googleapis.com
 echo y|gcloud services enable run.googleapis.com
@@ -43,7 +43,12 @@ gcloud iam service-accounts create "${PROJECT_ID}" \
 gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com \
     --role=roles/iam.serviceAccountTokenCreator \
     --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
-    --project=${PROJECT_ID}
+    --project=${PROJECT_ID} > /dev/null
+
+gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com \
+    --role=roles/iam.workloadIdentityUser \
+    --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
+    --project=${PROJECT_ID} > /dev/null
 
 # Grant roles/run.admin
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -77,8 +82,6 @@ echo
 echo WIF_PROVIDER: $WIPROVIDER
 echo WIF_SERVICE_ACCOUNT: $PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com
 echo
-gcloud iam service-accounts list --project="${PROJECT_ID}"
+gcloud iam service-accounts list --filter="email:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
 gcloud projects get-iam-policy "${PROJECT_ID}" --format=json | jq '.bindings[] | select(.members[] | contains("serviceAccount:$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com"))'
-
-
 
