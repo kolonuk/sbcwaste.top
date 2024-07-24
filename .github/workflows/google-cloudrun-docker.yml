@@ -66,6 +66,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      # debug action to show the secrets to log
+      - name: Show secrets
+        run: |
+          echo ${{ secrets.WIF_PROVIDER }}
+          echo ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
       - name: Google Auth
         id: auth
         uses: 'google-github-actions/auth@v0'
