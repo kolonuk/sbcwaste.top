@@ -54,7 +54,7 @@ env:
   SERVICE: sbcwaste #YOUR_SERVICE_NAME # TODO: update Cloud Run service name
   REGION: europe-west1 #YOUR_SERVICE_REGION # TODO: update Cloud Run service region
   REPO: eu-docker-repo
-  DEBUG: 'true'
+  DEBUG: 'false'
 
 jobs:
   deploy:
@@ -70,7 +70,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Google Auth
-        if: env.DEBUG == 'true'
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
