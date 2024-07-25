@@ -115,5 +115,5 @@ jobs:
 
       - name: List gcloud domains
         run: |-
-          echo $(gcloud domains list-user-verified)
+          echo $(gcloud run services list --platform managed)
 
