@@ -39,6 +39,6 @@ You can see the Artifactory repo here: https://console.cloud.google.com/artifact
 
 
 Deploy Github actions
-1. Add the standard github actions workflow to your project ()
-2. Create Workload Identity Federation (see https://github.com/google-github-actions/auth?tab=readme-ov-file#preferred-direct-workload-identity-federation) (run deploy-githubactions.sh)
-3. 
+1. Github actions workflow availabe in repo - Change params to suit. 
+2. Run deploy-githubactions.sh - Change params and run, making sure that gcloud sdk is installed and authenticated first (see the second part of the setup script). Make sure you also create the secrets. The permissions the script creates are most likelu a little overkill, but I don't have the time (or patience!) to strip it down.
+3. Once you push this to your own repo, the github actions will run, and it should deploy using your google cloud resources.

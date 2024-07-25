@@ -1,17 +1,25 @@
 #!/bin/bash
 
 PROJECT_ID="sbcwaste"
-GITHUB_ORG="kolonuk"      # github username, or your org name if part of an org
-REPO_NAME="kolonuk/sbcwaste.top"
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
+REPO_NAME="kolonuk/sbcwaste.top"
+GITHUB_ORG="kolonuk"      # github username, or your org name if part of an org
 WIP_NAME="github"
 ARTIFACTORY="eu-docker-repo"
 ARTIFACTORY_LOCATION="europe-west1"
+ARTIFACTORY_DESCRIPTION="EU Docker repository"
+
+gcloud config set project ${PROJECT_ID}
 
 echo y|gcloud services enable artifactregistry.googleapis.com
 echo y|gcloud services enable run.googleapis.com
-echo y|gcloud services enable secretmanager.googleapis.com
+#echo y|gcloud services enable secretmanager.googleapis.com
 echo y|gcloud services enable iamcredentials.googleapis.com
+
+gcloud artifacts repositories create "${ARTIFACTORY}" \
+  --repository-format=docker \
+  --location="${ARTIFACTORY_LOCATION}" \
+  --description="${ARTIFACTORY_DESCRIPTION}"
 
 gcloud iam workload-identity-pools create "${WIP_NAME}" \
   --project="${PROJECT_ID}" \
@@ -51,6 +59,12 @@ gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.i
 gcloud iam service-accounts add-iam-policy-binding ${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com \
     --role=roles/iam.workloadIdentityUser \
     --member="principalSet://iam.googleapis.com/${WIPOOL}/attribute.repository/${REPO_NAME}" \
+    --project=${PROJECT_ID} > /dev/null
+
+## Grant role to the compute service account
+gcloud iam service-accounts add-iam-policy-binding ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
+    --member="serviceAccount:${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/iam.serviceAccountUser" \
     --project=${PROJECT_ID} > /dev/null
 
 ## Grant roles to Artifact Registry
