@@ -113,7 +113,7 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 
 	// Create a new chromedp context, directing it to use the non-snap version of chrome
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath("/usr/bin/google-chrome-stable"),
+		chromedp.ExecPath("/usr/bin/chromium"),
 		chromedp.Flag("no-sandbox", true), // Running as root requires this
 		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
 	)
