@@ -34,11 +34,9 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Chromium
-RUN apt-get update && apt-get install -y chromium \
-&& rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
