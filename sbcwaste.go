@@ -26,7 +26,7 @@ type Collection struct {
 	Type            string   `json:"type"`
 	CollectionDates []string `json:"CollectionDates"`
 	IconURL         string   `json:"iconURL"`
-	IconDataURI     string   `json:"iconDataURI"`
+	IconDataURI     string   `json:"iconDataURI,omitempty"`
 }
 
 // All the collections
@@ -56,12 +56,17 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	var images string
 	var outputFormat string
 	var debuggingEnable bool
+	var showIcons bool
 
 	log.Default().Printf("URL: %s", r.URL)
 
 	// Are we in debug mode?
 	debuggingEnable = (r.URL.Query().Get("debug") == "yes")
 	log.Default().Printf("Debugging: %t\n", debuggingEnable)
+
+	// Are we showing icons?
+	showIcons = (r.URL.Query().Get("icons") == "yes")
+	log.Default().Printf("Showing Icons: %t\n", showIcons)
 
 	// Trim the leading slash and then split the path into segments
 	pathSegments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -76,8 +81,21 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		UPRN = r.URL.Query().Get("uprn")
 	}
 	if UPRN == "" {
-		log.Default().Printf("UPRN not provided\n")
-		http.Error(w, "UPRN not provided", http.StatusBadRequest)
+		log.Default().Printf("UPRN not provided, showing help page\n")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintln(w, "<h1>sbcwaste - Swindon Borough Council Waste Collection API</h1>")
+		fmt.Fprintln(w, "<p>This service provides waste collection dates for properties in Swindon.</p>")
+		fmt.Fprintln(w, "<h2>Usage:</h2>")
+		fmt.Fprintln(w, "<p><code>/[UPRN]/[format]</code></p>")
+		fmt.Fprintln(w, "<ul>")
+		fmt.Fprintln(w, "<li><b>UPRN</b>: The Unique Property Reference Number for your address.</li>")
+		fmt.Fprintln(w, "<li><b>format</b>: The output format. Can be <code>json</code> (default) or <code>ics</code>.</li>")
+		fmt.Fprintln(w, "</ul>")
+		fmt.Fprintln(w, "<h2>Optional Parameters:</h2>")
+		fmt.Fprintln(w, "<ul>")
+		fmt.Fprintln(w, "<li><b>?debug=yes</b>: Enable debug logging.</li>")
+		fmt.Fprintln(w, "<li><b>?icons=yes</b>: Include icon data in the JSON output.</li>")
+		fmt.Fprintln(w, "</ul>")
 		return
 	}
 	if debuggingEnable {
@@ -93,8 +111,17 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		log.Default().Printf("outputFormat: %s", outputFormat)
 	}
 
-	// Create a new chromedp context. Set a timeout in seconds for the context.
-	ctx, cancel := chromedp.NewContext(context.Background())
+	// Create a new chromedp context, directing it to use the non-snap version of chrome
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath("/usr/bin/google-chrome-stable"),
+		chromedp.Flag("no-sandbox", true), // Running as root requires this
+		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
+	)
+	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer cancel()
+
+	// create context
+	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -246,16 +273,19 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	imageUrls := strings.Split(strings.TrimSpace(images), "\n")
 
 	collection1.IconURL = imageUrls[0]
-	collection1.IconDataURI, err = convertImageToBase64URI(collection1.IconURL)
-	if err != nil {
-		http.Error(w, "Unable to parse SBC website icons 1", http.StatusInternalServerError)
-		log.Default().Printf("Failed to convert image %s: %v\n", collection1.IconURL, err)
-	}
 	collection2.IconURL = imageUrls[1]
-	collection2.IconDataURI, err = convertImageToBase64URI(collection2.IconURL)
-	if err != nil {
-		http.Error(w, "Unable to parse SBC website icons 1", http.StatusInternalServerError)
-		log.Default().Printf("Failed to convert image %s: %v\n", collection2.IconURL, err)
+
+	if showIcons {
+		collection1.IconDataURI, err = convertImageToBase64URI(collection1.IconURL)
+		if err != nil {
+			http.Error(w, "Unable to parse SBC website icons 1", http.StatusInternalServerError)
+			log.Default().Printf("Failed to convert image %s: %v\n", collection1.IconURL, err)
+		}
+		collection2.IconDataURI, err = convertImageToBase64URI(collection2.IconURL)
+		if err != nil {
+			http.Error(w, "Unable to parse SBC website icons 1", http.StatusInternalServerError)
+			log.Default().Printf("Failed to convert image %s: %v\n", collection2.IconURL, err)
+		}
 	}
 
 	// Query the address API to get the address string using UPRN variable
