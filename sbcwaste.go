@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -57,6 +58,12 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	var outputFormat string
 	var debuggingEnable bool
 	var showIcons bool
+
+	// Get the application environment from the environment variable
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = "development" // Default to development
+	}
 
 	log.Default().Printf("URL: %s", r.URL)
 
@@ -339,7 +346,8 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 
 	case "ics":
 		// Generate an iCalendar file
-		icsContent := "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Swindon Borough Council Waste Collections//sbcwaste//EN\n"
+		prodID := fmt.Sprintf("-//Swindon Borough Council Waste Collections//sbcwaste-%s//EN", appEnv)
+		icsContent := "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:" + prodID + "\n"
 
 		// for each entry in collections
 		for _, collection := range collections.Collections {
