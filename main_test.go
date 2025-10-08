@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +21,12 @@ func TestWasteCollection(t *testing.T) {
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
+	}
+
+	// Check the response body is what we expect.
+	expected := "<h1>sbcwaste - Swindon Borough Council Waste Collection API</h1>"
+	if !strings.Contains(rr.Body.String(), expected) {
+		t.Errorf("handler returned unexpected body: got %v want to contain %v",
+			rr.Body.String(), expected)
 	}
 }

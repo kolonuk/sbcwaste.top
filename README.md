@@ -24,7 +24,7 @@ When running locally (`APP_ENV=development`), the service uses a local SQLite da
 
 ### Cloud Environment
 
-When deployed to the Google Cloud environment, the service uses Memorystore for Memcached for caching. The Memcached instance is provisioned automatically as part of the GitHub Actions deployment workflow.
+When deployed to the Google Cloud environment, the service uses Firestore for caching. The application will automatically create and use a collection named `sbcwaste_cache` in your project's default Firestore database.
 
 ### Cache Expiry
 
@@ -36,12 +36,10 @@ The cache expiry time is configurable. By default, it is set to 3 days (259200 s
 
 To clear the local cache, simply delete the `sbcwaste.db` file from the project directory.
 
-**Cloud (Memcached):**
+**Cloud (Firestore):**
 
-To clear the Memcached cache in the cloud environment, you can use the `gcloud` command-line tool. There is currently no option to do this from the Google Cloud Console GUI.
+To clear the Firestore cache in the cloud environment, you can delete the documents in the `sbcwaste_cache` collection using the Google Cloud Console:
 
-1.  Make sure you have the `gcloud` CLI installed and authenticated.
-2.  Run the following command:
-    ```sh
-    gcloud memcache instances update [YOUR_MEMCACHED_INSTANCE_NAME] --project=[YOUR_PROJECT_ID] --region=[YOUR_REGION] --clear-cache
-    ```
+1.  Navigate to the **Firestore** page in the Google Cloud Console.
+2.  Select your project and you should see the `sbcwaste_cache` collection.
+3.  You can manually delete individual documents (cached items) or delete the entire collection by clicking the three dots next to the collection name and selecting "Delete collection".

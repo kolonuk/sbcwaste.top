@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
+	"cloud.google.com/go/firestore"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -54,7 +54,7 @@ func (c *SqliteCache) Get(key string) (*Collections, error) {
 	var expiration int64
 	err := row.Scan(&value, &expiration)
 	if err != nil {
-		return nil, err
+		return nil, err // This will be sql.ErrNoRows for a cache miss
 	}
 
 	if time.Now().Unix() > expiration {
@@ -93,38 +93,58 @@ func (c *SqliteCache) Close() error {
 	return c.db.Close()
 }
 
-// MemcachedCache is a cache implementation using Memcached
-type MemcachedCache struct {
-	client *memcache.Client
+// FirestoreCache is a cache implementation using Firestore
+type FirestoreCache struct {
+	client     *firestore.Client
+	collection *firestore.CollectionRef
 }
 
-// NewMemcachedCache creates a new MemcachedCache
-func NewMemcachedCache() (*MemcachedCache, error) {
-	memcachedEndpoint := os.Getenv("MEMCACHED_DISCOVERY_ENDPOINT")
-	if memcachedEndpoint == "" {
-		memcachedEndpoint = "localhost:11211"
+// FirestoreCacheItem represents the structure of the data stored in Firestore
+type FirestoreCacheItem struct {
+	Value      string    `firestore:"value"`
+	Expiration time.Time `firestore:"expiration"`
+}
+
+// NewFirestoreCache creates a new FirestoreCache
+func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
+	projectID := os.Getenv("PROJECT_ID")
+	if projectID == "" {
+		// In a real application, you might want to return an error here
+		// or have a more robust way of getting the project ID.
+		log.Println("PROJECT_ID environment variable not set.")
 	}
 
-	client := memcache.New(memcachedEndpoint)
-	err := client.Ping()
+	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &MemcachedCache{client: client}, nil
+	collection := client.Collection("sbcwaste_cache")
+
+	return &FirestoreCache{client: client, collection: collection}, nil
 }
 
-// Get retrieves a value from the Memcached cache
-func (c *MemcachedCache) Get(key string) (*Collections, error) {
-	item, err := c.client.Get(key)
-	if err == memcache.ErrCacheMiss {
-		return nil, nil // Cache miss
-	} else if err != nil {
+// Get retrieves a value from the Firestore cache
+func (c *FirestoreCache) Get(key string) (*Collections, error) {
+	doc, err := c.collection.Doc(key).Get(context.Background())
+	if err != nil {
+		// This will handle the case where the document doesn't exist (cache miss)
+		return nil, nil
+	}
+
+	var item FirestoreCacheItem
+	if err := doc.DataTo(&item); err != nil {
 		return nil, err
 	}
 
+	if time.Now().After(item.Expiration) {
+		// Cache expired, delete the document
+		_, _ = c.collection.Doc(key).Delete(context.Background())
+		return nil, nil
+	}
+
 	var collections Collections
-	err = json.Unmarshal(item.Value, &collections)
+	err = json.Unmarshal([]byte(item.Value), &collections)
 	if err != nil {
 		return nil, err
 	}
@@ -132,23 +152,25 @@ func (c *MemcachedCache) Get(key string) (*Collections, error) {
 	return &collections, nil
 }
 
-// Set adds a value to the Memcached cache
-func (c *MemcachedCache) Set(key string, collections *Collections, expiration time.Duration) error {
+// Set adds a value to the Firestore cache
+func (c *FirestoreCache) Set(key string, collections *Collections, expiration time.Duration) error {
 	val, err := json.Marshal(collections)
 	if err != nil {
 		return err
 	}
 
-	return c.client.Set(&memcache.Item{
-		Key:        key,
-		Value:      val,
-		Expiration: int32(expiration.Seconds()),
-	})
+	item := FirestoreCacheItem{
+		Value:      string(val),
+		Expiration: time.Now().Add(expiration),
+	}
+
+	_, err = c.collection.Doc(key).Set(context.Background(), item)
+	return err
 }
 
-// Close is a no-op for the memcache client but is here to satisfy the interface
-func (c *MemcachedCache) Close() error {
-	return nil
+// Close closes the Firestore client connection
+func (c *FirestoreCache) Close() error {
+	return c.client.Close()
 }
 
 // NewCache is a factory function that returns the appropriate cache implementation
@@ -160,6 +182,6 @@ func NewCache(ctx context.Context) (Cache, error) {
 		return NewSqliteCache()
 	}
 
-	log.Println("Using Memcached cache for cloud environment")
-	return NewMemcachedCache()
+	log.Println("Using Firestore cache for cloud environment")
+	return NewFirestoreCache(ctx)
 }

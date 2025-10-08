@@ -65,14 +65,16 @@ func TestNewCache(t *testing.T) {
 	}
 	defer os.Remove("./sbcwaste.db")
 
-	// Test production environment
+	// Test production environment (Firestore)
 	os.Setenv("APP_ENV", "production")
-	// This will attempt to connect to a Memcached instance. We expect an error
-	// in a local test environment where Memcached is not running.
+	os.Setenv("PROJECT_ID", "dummy-project-for-testing") // Firestore client needs a project ID
+	// This will attempt to create a Firestore client. We expect an error in a local
+	// test environment where ADC (Application Default Credentials) are not available.
 	_, err = NewCache(context.Background())
 	if err == nil {
-		t.Fatal("Expected an error when creating Memcached cache without a running instance, but got nil")
+		t.Fatal("Expected an error when creating Firestore cache without proper credentials, but got nil")
 	}
-	// A more specific check could be to ensure the error is a network-related error,
-	// but for now, just checking for a non-nil error is sufficient to know it tried to connect.
+	// A more specific check could be to ensure the error is related to credentials,
+	// but for now, just checking for a non-nil error is sufficient.
+	os.Unsetenv("PROJECT_ID") // Clean up env var
 }
