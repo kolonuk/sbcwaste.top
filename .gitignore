@@ -74,3 +74,7 @@ wget*
 
 # Ignore generated credentials from google-github-actions/auth
 gha-creds-*.json
+
+# sbcwaste files
+sbcwaste
+sbcwaste.db

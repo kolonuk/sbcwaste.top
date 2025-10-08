@@ -45,6 +45,12 @@
 name: Build and Deploy to Cloud Run
 
 on:
+  workflow_dispatch:
+    inputs:
+      CACHE_EXPIRY_SECONDS:
+        description: 'Cache expiry in seconds'
+        required: true
+        default: '259200'
   push:
     branches: [ "main", "dev" ]
 
@@ -109,7 +115,10 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}
-          env_vars: APP_ENV=${{ env.APP_ENV }}
+          env_vars: |
+            APP_ENV=${{ env.APP_ENV }}
+            PROJECT_ID=${{ env.PROJECT_ID }}
+            CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
 
       - name: Show Output
         if: env.DEBUG == 'false'
