@@ -46,6 +46,7 @@ jobs:
           fi
           echo "PROJECT_ID=sbcwaste" >> $GITHUB_ENV
           echo "ARTIFACT_REGISTRY=europe-west1-docker.pkg.dev" >> $GITHUB_ENV
+          echo "ARTIFACTORY_REPO=eu-docker-repo" >> $GITHUB_ENV
           echo "IMAGE_NAME=sbcwaste" >> $GITHUB_ENV
 
       - name: Authenticate to Google Cloud
@@ -62,14 +63,14 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker push ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker build -t ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.ARTIFACTORY_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.ARTIFACTORY_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Deploy to Cloud Run
         id: deploy
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.ARTIFACTORY_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             --region europe-west1 \
             --platform managed \
             --allow-unauthenticated \
