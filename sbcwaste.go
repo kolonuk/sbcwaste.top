@@ -118,11 +118,18 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		log.Default().Printf("outputFormat: %s", outputFormat)
 	}
 
-	// create context from the global allocator context
-	ctx, cancel := chromedp.NewContext(allocatorContext)
+	// Create a new chromedp context, directing it to use the non-snap version of chrome
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath("/usr/bin/chromium"),
+		chromedp.Flag("no-sandbox", true), // Running as root requires this
+		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
+	)
+	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
 
-	// create a timeout
+	// create context
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
 	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
