@@ -2,44 +2,15 @@ package main
 
 import (
 	"compress/gzip"
-	"context"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	_ "net/http/pprof"
-
-	"github.com/chromedp/chromedp"
 )
 
-// Global variable to hold the allocator context
-var allocatorContext context.Context
-
 func main() {
-	// Create a new chromedp allocator
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath("/usr/bin/chromium"),
-		chromedp.Flag("no-sandbox", true), // Running as root requires this
-		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
-	)
-	var cancel context.CancelFunc
-	allocatorContext, cancel = chromedp.NewExecAllocator(context.Background(), opts...)
-
-	// Set up a channel to listen for OS signals
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-
-	// Run the graceful shutdown routine in a separate goroutine
-	go func() {
-		<-stop
-		log.Println("Shutting down gracefully...")
-		cancel()
-		os.Exit(0)
-	}()
-
 	http.HandleFunc("/", gzipMiddleware(WasteCollection))
 
 	port := os.Getenv("PORT")
