@@ -14,29 +14,32 @@ The API endpoint is `/[UPRN]/[format]`.
 -   `?debug=yes`: Enable debug logging.
 -   `?icons=yes`: Include icon data in the JSON output.
 
-## Deployment
+## Caching
 
-This project uses a GitHub Actions workflow to automatically build and deploy the application to Google Cloud Run. The workflow is defined in `.github/workflows/google-cloudrun-docker.yml`. The workflow can also be triggered manually from the Actions tab in GitHub.
+To improve performance and reduce the load on the Swindon Borough Council website, this service implements a caching mechanism.
 
-### Branches
+### Local Development
 
--   **`dev` branch:** Deploys to the development environment at `dev.sbcwaste.top`.
--   **`main` branch:** Deploys to the production environment at `sbcwaste.top`.
+When running locally (`APP_ENV=development`), the service uses a local SQLite database (`sbcwaste.db`) for caching. The database file is created automatically in the root of the project directory.
 
-### GitHub Secrets
+### Cloud Environment
 
-To use the deployment workflow, you must configure the following secrets in your GitHub repository settings:
+When deployed to the Google Cloud environment, the service uses Firestore for caching. The application will automatically create and use a collection named `sbcwaste_cache` in your project's default Firestore database.
 
--   `WIF_PROVIDER`: The full identifier of the Workload Identity Provider.
--   `WIF_SERVICE_ACCOUNT`: The email address of the service account to use.
+### Cache Expiry
 
-The `scripts/deploy-githubactions.sh` script can be used to set up the necessary Google Cloud resources and will output the values for `WIF_PROVIDER` and `WIF_SERVICE_ACCOUNT`.
+The cache expiry time is configurable. By default, it is set to 3 days (259200 seconds). You can change this value by modifying the `CACHE_EXPIRY_SECONDS` input in the GitHub Actions workflow when running it manually.
 
-### Verification
+### Clearing the Cache
 
-After deployment, the workflow performs two verification steps:
+**Local (SQLite):**
 
-1.  **DNS Verification:** It checks if the domain's CNAME record points to `ghs.googlehosted.com.`.
-2.  **Health Check:** It sends a request to the root of the application and checks for a 200 OK response and the presence of "sbcwaste - Swindon Borough Council Waste Collection API" in the response body.
+To clear the local cache, simply delete the `sbcwaste.db` file from the project directory.
 
-The workflow will fail if these checks do not pass after several retries.
+**Cloud (Firestore):**
+
+To clear the Firestore cache in the cloud environment, you can delete the documents in the `sbcwaste_cache` collection using the Google Cloud Console:
+
+1.  Navigate to the **Firestore** page in the Google Cloud Console.
+2.  Select your project and you should see the `sbcwaste_cache` collection.
+3.  You can manually delete individual documents (cached items) or delete the entire collection by clicking the three dots next to the collection name and selecting "Delete collection".
