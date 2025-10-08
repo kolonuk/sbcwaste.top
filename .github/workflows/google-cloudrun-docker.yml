@@ -15,6 +15,12 @@
 name: Build and Deploy to Google Cloud Run
 
 on:
+  workflow_dispatch:
+    inputs:
+      CACHE_EXPIRY_SECONDS:
+        description: 'Cache expiry in seconds'
+        required: true
+        default: '259200'
   push:
     branches:
       - main
@@ -68,14 +74,15 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy
-        run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.ARTIFACTORY_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            --region europe-west1 \
-            --platform managed \
-            --allow-unauthenticated \
-            --project ${{ env.PROJECT_ID }} \
-            --quiet
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+          env_vars: |
+            APP_ENV=${{ env.APP_ENV }}
+            PROJECT_ID=${{ env.PROJECT_ID }}
+            CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
 
       - name: Verify DNS
         run: |
