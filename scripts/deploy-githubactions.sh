@@ -5,7 +5,7 @@ PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectN
 REPO_NAME="kolonuk/sbcwaste.top"
 GITHUB_ORG="kolonuk"      # github username, or your org name if part of an org
 WIP_NAME="github"
-ARTIFACTORY="sbcwaste"
+ARTIFACTORY="eu-docker-repo"
 ARTIFACTORY_LOCATION="europe-west1"
 ARTIFACTORY_DESCRIPTION="EU Docker repository"
 
