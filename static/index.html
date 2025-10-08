@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swindon Bin Collection Calendar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Swindon Bin Collection Calendar</h1>
+            <p>Get your bin collection dates from the Swindon Borough Council website and easily add them to your calendar.</p>
+        </header>
+
+        <section id="address-lookup">
+            <h2>1. Find Your Address</h2>
+            <p>To get your collection schedule, we first need to find your property's <strong>Unique Property Reference Number (UPRN)</strong>. A UPRN is a unique identifier for every addressable location in Great Britain. You can <a href="https://www.geoplace.co.uk/addresses-streets/location-data/the-uprn" target="_blank">learn more about UPRNs on the GeoPlace website</a>.</p>
+            <p>Enter your postcode or street name below to find your UPRN.</p>
+            <input type="text" id="address-search" placeholder="Enter your postcode or street name">
+            <button id="search-btn">Search</button>
+            <div id="search-results"></div>
+        </section>
+
+        <section id="ics-generator">
+            <h2>2. Generate Your Calendar Link</h2>
+            <p>Once you've found your UPRN from the search results, enter it below to generate a personal calendar link.</p>
+            <p>This link uses the iCalendar (ICS) format, a standard way to share calendar information. You can learn more about it on <a href="https://en.wikipedia.org/wiki/ICalendar" target="_blank">Wikipedia</a>.</p>
+            <input type="text" id="uprn-ics-input" placeholder="Enter your UPRN here">
+            <button id="generate-ics-btn">Generate Link</button>
+            <div id="ics-link-container"></div>
+        </section>
+
+        <section id="calendar-instructions">
+            <h2>3. Add to Your Calendar</h2>
+            <p>Follow these simple instructions to add the generated link to your favorite calendar app.</p>
+            <details>
+                <summary>Google Calendar</summary>
+                <ol>
+                    <li>On your computer, open <a href="https://calendar.google.com" target="_blank">Google Calendar</a>.</li>
+                    <li>On the left, next to "Other calendars," click the `+` icon and select "From URL."</li>
+                    <li>Paste your generated calendar link into the field.</li>
+                    <li>Click "Add calendar." It will now appear in your calendar list.</li>
+                </ol>
+            </details>
+            <details>
+                <summary>Microsoft Outlook</summary>
+                <ol>
+                    <li>Open the Outlook desktop app.</li>
+                    <li>Go to the Calendar section.</li>
+                    <li>In the "Home" tab, click "Add Calendar" and select "From Internet."</li>
+                    <li>Paste your generated calendar link and click "OK."</li>
+                </ol>
+            </details>
+            <details>
+                <summary>Apple Calendar</summary>
+                <ol>
+                    <li>Open the Calendar app on your Mac.</li>
+                    <li>Go to "File" > "New Calendar Subscription."</li>
+                    <li>Paste your generated calendar link and click "Subscribe."</li>
+                    <li>Customize the settings and click "OK."</li>
+                </ol>
+            </details>
+             <details>
+                <summary>Android / Google Calendar App</summary>
+                <p>Adding a calendar subscription must be done from the Google Calendar website on a computer (see the "Google Calendar" instructions above). Once added, it will automatically sync to your Android device's calendar app.</p>
+            </details>
+        </section>
+
+        <section id="advanced-usage">
+            <details>
+                <summary><h3>For Advanced Users: API Usage</h3></summary>
+                <p>You can also access the collection data directly in JSON format. This is useful for developers or for integrating with other applications.</p>
+                <code>/&lt;UPRN&gt;/json</code>
+            </details>
+        </section>
+
+        <section id="support">
+            <h2>Support & Community</h2>
+            <p>This is a community-run project. If you find it useful, please consider supporting it.</p>
+            <ul>
+                <li><a href="https://github.com/kolonuk/sbcwaste.top" target="_blank">GitHub Repository</a></li>
+                <li><a href="https://github.com/kolonuk/sbcwaste.top/issues/new" target="_blank">Report an Issue</a></li>
+                <li><a href="https://paypal.me/kolonuk" target="_blank">Buy me a beer!</a></li>
+            </ul>
+        </section>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
