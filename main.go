@@ -40,7 +40,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	http.HandleFunc("/", gzipMiddleware(WasteCollection))
+	http.HandleFunc("/", gzipMiddleware(router))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -51,6 +51,32 @@ func main() {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
 	}
 }
+
+func router(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		http.ServeFile(w, r, "static/index.html")
+		return
+	}
+	if r.URL.Path == "/style.css" {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		http.ServeFile(w, r, "static/style.css")
+		return
+	}
+	if r.URL.Path == "/script.js" {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		http.ServeFile(w, r, "static/script.js")
+		return
+	}
+	if r.URL.Path == "/search-address" {
+		SearchAddressHandler(w, r)
+		return
+	}
+
+	// For any other path, assume it's a waste collection request.
+	// This will handle /<uprn>/json and /<uprn>/ics
+	WasteCollection(w, r)
+}
+
 
 func gzipMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
