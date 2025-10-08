@@ -45,6 +45,12 @@
 name: Build and Deploy to Cloud Run
 
 on:
+  workflow_dispatch:
+    inputs:
+      CACHE_EXPIRY_SECONDS:
+        description: 'Cache expiry in seconds'
+        required: true
+        default: '259200'
   push:
     branches: [ "main", "dev" ]
 
@@ -54,6 +60,8 @@ env:
   REGION: europe-west1 #YOUR_SERVICE_REGION # TODO: update Cloud Run service region
   REPO: eu-docker-repo
   DEBUG: 'false'
+  MEMCACHED_INSTANCE_NAME: sbcwaste-memcached
+  VPC_CONNECTOR_NAME: sbcwaste-connector
 
 jobs:
   deploy:
@@ -86,6 +94,32 @@ jobs:
           workload_identity_provider: '${{ secrets.WIF_PROVIDER }}' # e.g. - projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
           service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}' # e.g. - my-service-account@my-project.iam.gserviceaccount.com
 
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Create VPC Connector if it does not exist
+        run: |
+          gcloud compute networks vpc-access connectors describe ${{ env.VPC_CONNECTOR_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} || \
+          gcloud compute networks vpc-access connectors create ${{ env.VPC_CONNECTOR_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --range=10.8.0.0/28
+
+      - name: Create Memcached instance if it does not exist
+        run: |
+          gcloud memcache instances describe ${{ env.MEMCACHED_INSTANCE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} || \
+          gcloud memcache instances create ${{ env.MEMCACHED_INSTANCE_NAME }} \
+            --node-count=1 \
+            --node-cpu=1 \
+            --node-memory=1GB \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Get Memcached connection details
+        run: |
+          export MEMCACHED_DISCOVERY_ENDPOINT=$(gcloud memcache instances describe ${{ env.MEMCACHED_INSTANCE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format 'value(discoveryEndpoint)')
+          echo "MEMCACHED_DISCOVERY_ENDPOINT=$MEMCACHED_DISCOVERY_ENDPOINT" >> $GITHUB_ENV
+
       - name: Docker Auth
         if: env.DEBUG == 'false'
         id: docker-auth
@@ -109,7 +143,11 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}
-          env_vars: APP_ENV=${{ env.APP_ENV }}
+          vpc_connector: ${{ env.VPC_CONNECTOR_NAME }}
+          env_vars: |
+            APP_ENV=${{ env.APP_ENV }}
+            MEMCACHED_DISCOVERY_ENDPOINT=${{ env.MEMCACHED_DISCOVERY_ENDPOINT }}
+            CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
 
       - name: Show Output
         if: env.DEBUG == 'false'
