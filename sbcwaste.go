@@ -37,19 +37,19 @@ type Collections struct {
 	Address     string       `json:"address"`
 }
 
-// Define a struct to match the JSON structure
-type AddressResponse struct {
-	Name    string     `json:"name"`
-	Columns []string   `json:"columns"`
-	Data    [][]string `json:"data"`
-	Total   int        `json:"total"`
-}
-
 type requestParams struct {
 	uprn      string
 	output    string
 	debugging bool
 	showIcons bool
+}
+
+// rawData holds the raw data scraped from the SBC website.
+type rawData struct {
+	h3Nodes        []*cdp.Node
+	dateNodes      []*cdp.Node
+	nextThreeNodes []*cdp.Node
+	imageURLs      string
 }
 
 func parseRequestParams(r *http.Request) (*requestParams, error) {
@@ -78,30 +78,15 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 	return params, nil
 }
 
-func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Collections, error) {
-	collections := &Collections{}
-	var h3Nodes, dateNodes, nextThreeNodes []*cdp.Node
-	var images string
-	var collection1, collection2 Collection
-	var firstDate1, firstDate2 string
-
-	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
-
-	taskCtx, cancel := chromedp.NewContext(allocatorContext)
-	defer cancel()
-	taskCtx, cancel = context.WithTimeout(taskCtx, 15*time.Second)
-	defer cancel()
-
-	if params.debugging {
-		log.Printf("Fetching URL: %s", url)
-	}
+func extractCollectionData(taskCtx context.Context, url string) (*rawData, error) {
+	data := &rawData{}
 
 	tasks := chromedp.Tasks{
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`div.bin-collection-content`, chromedp.ByQuery),
-		chromedp.Nodes(`div.content-left h3`, &h3Nodes, chromedp.ByQueryAll),
-		chromedp.Nodes(`span.nextCollectionDate`, &dateNodes, chromedp.ByQueryAll),
-		chromedp.Nodes(`div.row.collection-next > div.row`, &nextThreeNodes, chromedp.ByQueryAll),
+		chromedp.Nodes(`div.content-left h3`, &data.h3Nodes, chromedp.ByQueryAll),
+		chromedp.Nodes(`span.nextCollectionDate`, &data.dateNodes, chromedp.ByQueryAll),
+		chromedp.Nodes(`div.row.collection-next > div.row`, &data.nextThreeNodes, chromedp.ByQueryAll),
 		chromedp.Evaluate(`
 			(function() {
 				let images = [];
@@ -116,32 +101,39 @@ func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Colle
 				});
 				return images.join('\n');
 			})()
-		`, &images),
+		`, &data.imageURLs),
 	}
 
 	if err := chromedp.Run(taskCtx, tasks); err != nil {
 		return nil, fmt.Errorf("failed to run chromedp tasks: %w", err)
 	}
 
-	if len(h3Nodes) < 2 || len(dateNodes) < 2 {
+	if len(data.h3Nodes) < 2 || len(data.dateNodes) < 2 {
 		return nil, errors.New("failed to find all required nodes on the page")
 	}
 
+	return data, nil
+}
+
+func parseDate(dateStr string) (string, error) {
+	parsed, err := time.Parse("Monday, 2 January 2006", dateStr)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+func parseCollectionData(taskCtx context.Context, data *rawData) (*Collections, error) {
+	var collection1, collection2 Collection
+	var firstDate1, firstDate2 string
+
 	if err := chromedp.Run(taskCtx,
-		chromedp.Text(h3Nodes[0].FullXPath(), &collection1.Type),
-		chromedp.Text(dateNodes[0].FullXPath(), &firstDate1),
-		chromedp.Text(h3Nodes[1].FullXPath(), &collection2.Type),
-		chromedp.Text(dateNodes[1].FullXPath(), &firstDate2),
+		chromedp.Text(data.h3Nodes[0].FullXPath(), &collection1.Type),
+		chromedp.Text(data.dateNodes[0].FullXPath(), &firstDate1),
+		chromedp.Text(data.h3Nodes[1].FullXPath(), &collection2.Type),
+		chromedp.Text(data.dateNodes[1].FullXPath(), &firstDate2),
 	); err != nil {
 		return nil, fmt.Errorf("failed to extract initial collection data: %w", err)
-	}
-
-	parseDate := func(dateStr string) (string, error) {
-		parsed, err := time.Parse("Monday, 2 January 2006", dateStr)
-		if err != nil {
-			return "", err
-		}
-		return parsed.Format("2006-01-02"), nil
 	}
 
 	if d, err := parseDate(firstDate1); err == nil {
@@ -152,7 +144,7 @@ func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Colle
 	}
 
 	// Simplified date parsing for the next three dates
-	for i, node := range nextThreeNodes {
+	for i, node := range data.nextThreeNodes {
 		var text string
 		if err := chromedp.Run(taskCtx, chromedp.Text(node.FullXPath(), &text, chromedp.BySearch)); err != nil {
 			log.Printf("could not get text for node: %v", err)
@@ -171,32 +163,62 @@ func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Colle
 		}
 	}
 
-	imageUrls := strings.Split(strings.TrimSpace(images), "\n")
+	imageUrls := strings.Split(strings.TrimSpace(data.imageURLs), "\n")
 	if len(imageUrls) >= 2 {
 		collection1.IconURL = imageUrls[0]
 		collection2.IconURL = imageUrls[1]
 	}
 
-	if params.showIcons {
-		var err error
-		collection1.IconDataURI, err = convertImageToBase64URI(collection1.IconURL)
-		if err != nil {
-			log.Printf("Failed to convert image %s: %v\n", collection1.IconURL, err)
-		}
-		collection2.IconDataURI, err = convertImageToBase64URI(collection2.IconURL)
-		if err != nil {
-			log.Printf("Failed to convert image %s: %v\n", collection2.IconURL, err)
+	return &Collections{
+		Collections: []Collection{collection1, collection2},
+	}, nil
+}
+
+func fetchAndProcessIcons(collections *Collections) {
+	for i := range collections.Collections {
+		if collections.Collections[i].IconURL != "" {
+			var err error
+			collections.Collections[i].IconDataURI, err = convertImageToBase64URI(collections.Collections[i].IconURL)
+			if err != nil {
+				log.Printf("Failed to convert image %s: %v\n", collections.Collections[i].IconURL, err)
+			}
 		}
 	}
+}
 
-	address, err := queryAddressAPI("https://maps.swindon.gov.uk/getdata.aspx?callback=jQuery16406504322666596749_1721033956585&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location="+params.uprn+"&pagesize=13&startnum=1&gettotals=false&axuid=1721033978935&mapsource=mapsources/MyHouse&_=1721033978935", params.debugging)
+func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Collections, error) {
+	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
+
+	taskCtx, cancel := chromedp.NewContext(allocatorContext)
+	defer cancel()
+	taskCtx, cancel = context.WithTimeout(taskCtx, 15*time.Second)
+	defer cancel()
+
+	if params.debugging {
+		log.Printf("Fetching URL: %s", url)
+	}
+
+	rawData, err := extractCollectionData(taskCtx, url)
 	if err != nil {
-		log.Printf("Failed to query address API: %v\n", err)
+		return nil, err
+	}
+
+	collections, err := parseCollectionData(taskCtx, rawData)
+	if err != nil {
+		return nil, err
+	}
+
+	if params.showIcons {
+		fetchAndProcessIcons(collections)
+	}
+
+	address, err := getAddressFromUPRN(params.uprn, params.debugging)
+	if err != nil {
+		log.Printf("Failed to get address from UPRN: %v\n", err)
 	} else {
 		collections.Address = address
 	}
 
-	collections.Collections = append(collections.Collections, collection1, collection2)
 	return collections, nil
 }
 
