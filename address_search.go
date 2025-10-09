@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"regexp"
 )
 
 type AddressSearchResult struct {
@@ -33,26 +31,7 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 func searchAddress(query string) ([]AddressSearchResult, error) {
 	url := fmt.Sprintf("https://maps.swindon.gov.uk/getdata.aspx?callback=my_callback&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=%s&pagesize=100&startnum=1&gettotals=false&axuid=1&mapsource=mapsources/MyHouse", query)
 
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	re := regexp.MustCompile(`\(([\s\S]*?)\);?$`)
-	matches := re.FindSubmatch(body)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("failed to extract JSON from JSONP response")
-	}
-	jsonString := string(matches[1])
-
-	var addressResponse AddressResponse
-	err = json.Unmarshal([]byte(jsonString), &addressResponse)
+	addressResponse, err := fetchAddressData(url)
 	if err != nil {
 		return nil, err
 	}
