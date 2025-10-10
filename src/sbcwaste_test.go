@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -61,8 +62,8 @@ func TestParseRequestParams(t *testing.T) {
 			if params.uprn != tc.expectedUPRN {
 				t.Errorf("expected uprn %q, got %q", tc.expectedUPRN, params.uprn)
 			}
-		}
-    }
+		})
+	}
 }
 
 func TestFormatAsXML(t *testing.T) {
@@ -172,6 +173,6 @@ func TestParseDate(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("parseDate() = %v, want %v", got, tc.want)
 			}
-		}
+		})
 	}
 }

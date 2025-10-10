@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"log"
@@ -59,9 +60,11 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 	params := &requestParams{}
 	pathSegments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 
-	if len(pathSegments) > 0 {
+	if len(pathSegments) > 0 && pathSegments[0] != "" {
 		params.uprn = pathSegments[0]
-	} else {
+	}
+
+	if params.uprn == "" {
 		params.uprn = r.URL.Query().Get("uprn")
 	}
 
@@ -266,7 +269,9 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		if cacheExpirySeconds <= 0 {
 			cacheExpirySeconds = 259200 // 3 days
 		}
-		cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second)
+		if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
+			log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
+		}
 	} else {
 		if params.debugging {
 			log.Printf("Cache hit for UPRN: %s", params.uprn)
@@ -313,7 +318,9 @@ func formatAsYAML(w http.ResponseWriter, collections *Collections) {
 		http.Error(w, "Failed to marshal YAML", http.StatusInternalServerError)
 		return
 	}
-	w.Write(yamlData)
+	if _, err := w.Write(yamlData); err != nil {
+		log.Printf("Failed to write YAML response: %v", err)
+	}
 }
 
 func showHelp(w http.ResponseWriter) {
@@ -361,5 +368,7 @@ func formatAsICS(w http.ResponseWriter, collections *Collections, params *reques
 	}
 	icsBuilder.WriteString("END:VCALENDAR")
 	w.Header().Set("Content-Type", "text/calendar")
-	w.Write([]byte(icsBuilder.String()))
+	if _, err := w.Write([]byte(icsBuilder.String())); err != nil {
+		log.Printf("Failed to write ICS response: %v", err)
+	}
 }
