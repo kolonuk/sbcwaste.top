@@ -43,8 +43,10 @@ env:
 
 jobs:
   build:
-    name: Build and Scan
+    name: Build, Scan, and Push
     runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.build-image.outputs.image_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,13 +66,15 @@ jobs:
           args: './src/...'
 
       - name: Build Docker image
+        id: build-image
         run: |
           docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
+          echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}'
+          image-ref: ${{ steps.build-image.outputs.image_name }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -94,8 +98,7 @@ jobs:
 
       - name: Push Docker image
         if: github.event_name == 'push'
-        run: |
-          docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
+        run: docker push ${{ steps.build-image.outputs.image_name }}
 
   deploy:
     name: Deploy to Cloud Run
@@ -127,7 +130,7 @@ jobs:
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
+          image: ${{ needs.build.outputs.image_name }}
           env_vars: |
             APP_ENV=${{ env.APP_ENV }}
             PROJECT_ID=${{ env.PROJECT_ID }}
