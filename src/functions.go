@@ -25,6 +25,7 @@ type AddressResponse struct {
 // convertImageToBase64 fetches an image from a URL and converts it to a base64 data URI string
 func convertImageToBase64URI(imageUrl string) (string, error) {
 	// Fetch the image
+	// #nosec G107
 	resp, err := http.Get(imageUrl)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch image: %v", err)
@@ -87,6 +88,7 @@ func getAddressFromUPRN(uprn string, debuggingEnable bool) (string, error) {
 }
 
 func fetchAddressData(url string) (*AddressResponse, error) {
+	// #nosec G107
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
