@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Running Costs - Swindon Bin Collection Calendar</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Project Running Costs</h1>
+            <p>Transparency is important. This page details the monthly operational costs associated with keeping this service running, fetched automatically from Google Cloud Billing.</p>
+        </header>
+
+        <section id="cost-summary">
+            <h2>Cost Breakdown</h2>
+            <p>The primary cost for this project is the hosting of the web application on Google Cloud. The table below is generated from live billing data.</p>
+            <p><strong>Total cost for <span id="current-year"></span> (so far):</strong> <span id="total-cost">£0.00</span></p>
+
+            <h3>Monthly Costs</h3>
+            <table id="costs-table">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Total Cost</th>
+                    </tr>
+                </thead>
+                <tbody id="costs-tbody">
+                    <!-- Data will be populated by JavaScript -->
+                    <tr>
+                        <td colspan="2">Loading costs...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <footer>
+            <p><a href="/">Back to Home</a></p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tbody = document.getElementById('costs-tbody');
+            const totalCostEl = document.getElementById('total-cost');
+            const currentYearEl = document.getElementById('current-year');
+            const currentYear = new Date().getFullYear();
+            currentYearEl.textContent = currentYear;
+
+            fetch('/api/costs')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    tbody.innerHTML = ''; // Clear loading message
+                    let totalCost = 0;
+
+                    if (!data || data.length === 0) {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td colspan="2">No billing data available yet. Please check back later.</td>`;
+                        tbody.appendChild(row);
+                        return;
+                    }
+
+                    data.forEach(item => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${item.year_month}</td>
+                            <td>£${item.total_cost.toFixed(2)}</td>
+                        `;
+                        tbody.appendChild(row);
+
+                        // Add to total if it's from the current year
+                        if (item.year_month.startsWith(currentYear)) {
+                            totalCost += item.total_cost;
+                        }
+                    });
+
+                    totalCostEl.textContent = `£${totalCost.toFixed(2)}`;
+                })
+                .catch(error => {
+                    console.error('Error fetching billing data:', error);
+                    tbody.innerHTML = ''; // Clear loading message
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="2" style="color: red;">Failed to load billing data. Please try again later.</td>`;
+                    tbody.appendChild(row);
+                });
+        });
+    </script>
+</body>
+</html>
