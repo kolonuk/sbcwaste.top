@@ -319,12 +319,12 @@ func showHelp(w http.ResponseWriter) {
 	fmt.Fprintln(w, "<p><code>/[UPRN]/[format]</code></p>")
 	fmt.Fprintln(w, "<ul>")
 	fmt.Fprintln(w, "<li><b>UPRN</b>: The Unique Property Reference Number for your address.</li>")
-	fmt.Fprintln(w, "<li><b>format</b>: The output format. Can be <code>json</code> (default) or <code>ics</code>.</li>")
+	fmt.Fprintln(w, "<li><b>format</b>: The output format. Can be <code>json</code> (default), <code>ics</code>, <code>xml</code>, or <code>yaml</code>.</li>")
 	fmt.Fprintln(w, "</ul>")
 	fmt.Fprintln(w, "<h2>Optional Parameters:</h2>")
 	fmt.Fprintln(w, "<ul>")
 	fmt.Fprintln(w, "<li><b>?debug=yes</b>: Enable debug logging.</li>")
-	fmt.Fprintln(w, "<li><b>?icons=yes</b>: Include icon data in the JSON output.</li>")
+	fmt.Fprintln(w, "<li><b>?icons=yes</b>: Include base64-encoded icon data in the output (JSON, XML, YAML only).</li>")
 	fmt.Fprintln(w, "</ul>")
 }
 
