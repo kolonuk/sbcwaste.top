@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 type AddressSearchResult struct {
@@ -29,7 +30,8 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func searchAddress(query string) ([]AddressSearchResult, error) {
-	url := fmt.Sprintf("https://maps.swindon.gov.uk/getdata.aspx?callback=my_callback&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=%s&pagesize=100&startnum=1&gettotals=false&axuid=1&mapsource=mapsources/MyHouse", query)
+	escapedQuery := url.QueryEscape(query)
+	url := fmt.Sprintf("https://maps.swindon.gov.uk/getdata.aspx?callback=my_callback&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=%s&pagesize=100&startnum=1&gettotals=false&axuid=1&mapsource=mapsources/MyHouse", escapedQuery)
 
 	addressResponse, err := fetchAddressData(url)
 	if err != nil {

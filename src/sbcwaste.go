@@ -10,12 +10,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +67,11 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 
 	if params.uprn == "" {
 		return nil, errors.New("UPRN not provided")
+	}
+
+	// Validate that the UPRN is a numeric value
+	if matched, _ := regexp.MatchString("^[0-9]+$", params.uprn); !matched {
+		return nil, errors.New("invalid UPRN format")
 	}
 
 	if len(pathSegments) >= 2 {

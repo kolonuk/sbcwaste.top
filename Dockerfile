@@ -8,8 +8,8 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source code
-COPY . .
+# Copy the source code
+COPY src/ .
 
 # Build the Go program with static link for smaller size and no libc dependencies
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
