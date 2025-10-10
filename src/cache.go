@@ -59,7 +59,9 @@ func (c *SqliteCache) Get(key string) (*Collections, error) {
 
 	if time.Now().Unix() > expiration {
 		// Cache expired
-		c.db.Exec("DELETE FROM cache WHERE key = ?", key)
+		if _, err := c.db.Exec("DELETE FROM cache WHERE key = ?", key); err != nil {
+			log.Printf("Failed to delete expired cache entry for key %s: %v", key, err)
+		}
 		return nil, nil
 	}
 
