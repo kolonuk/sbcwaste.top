@@ -29,6 +29,11 @@ func TestSearchAddressHandler_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Swap out the safe HTTP client for the default one for testing purposes
+	originalHTTPClient := HTTPClient
+	HTTPClient = http.DefaultClient
+	defer func() { HTTPClient = originalHTTPClient }()
+
 	// This is a bit of a hack, but we need to override the function that fetches the address data
 	// so that it points to our test server.
 	originalFetchAddressData := fetchAddressData
