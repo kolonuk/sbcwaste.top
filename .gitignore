@@ -78,4 +78,3 @@ gha-creds-*.json
 # sbcwaste files
 /sbcwaste
 /sbcwaste.db
-/billing_data.csv
