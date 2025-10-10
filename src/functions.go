@@ -2,21 +2,58 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 )
+
+// newSafeClient creates an http.Client that prevents requests to private networks.
+func newSafeClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, _, err := net.SplitHostPort(addr)
+				if err != nil {
+					// This should not happen for http/https requests, as transport adds the port.
+					// If it does, we can't safely check the host.
+					return nil, fmt.Errorf("cannot split host/port: %w", err)
+				}
+
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return nil, fmt.Errorf("dns lookup failed for %s: %w", host, err)
+				}
+
+				for _, ip := range ips {
+					if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+						return nil, fmt.Errorf("refused to connect to private/local address: %s (%s)", ip, host)
+					}
+				}
+
+				// The address is safe, proceed with the default dialer
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr)
+			},
+		},
+		Timeout: 60 * time.Second,
+	}
+}
+
+var HTTPClient = newSafeClient()
 
 // convertImageToBase64 fetches an image from a URL and converts it to a base64 data URI string
 func convertImageToBase64URI(imageUrl string) (string, error) {
 	// Fetch the image
-	// #nosec G107
-	resp, err := http.Get(imageUrl)
+	// #nosec G107 - Mitigated by using a safe http client.
+	resp, err := HTTPClient.Get(imageUrl)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch image: %v", err)
 	}
@@ -65,7 +102,7 @@ type AddressResponse struct {
 }
 
 var fetchAddressData = func(url string) (*AddressResponse, error) {
-	resp, err := http.Get(url)
+	resp, err := HTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get address data: %w", err)
 	}
