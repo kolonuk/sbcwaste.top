@@ -8,13 +8,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const generateIcsLink = () => {
         const uprn = uprnIcsInput.value.trim();
+        const sbcLink = document.getElementById('sbc-website-link');
+        const sbcBaseUrl = 'https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days';
+
         if (uprn) {
             const icsLink = `${window.location.origin}/${uprn}/ics`;
             icsLinkContainer.innerHTML = `<p><strong>Your calendar link is ready!</strong></p><p><a href="${icsLink}" target="_blank">${icsLink}</a></p><p>Now, follow the instructions in Step 3 below to add it to your calendar.</p>`;
+            sbcLink.href = `${sbcBaseUrl}?addressList=${uprn}&uprnSubmit=Yes`;
         } else {
             icsLinkContainer.innerHTML = '';
+            sbcLink.href = sbcBaseUrl;
         }
     };
+
+    uprnIcsInput.addEventListener('input', generateIcsLink);
 
     searchBtn.addEventListener('click', () => {
         const query = addressSearch.value.trim();

@@ -58,13 +58,13 @@ func router(w http.ResponseWriter, r *http.Request) {
 	// to run this locally, and also to have a more meaningful health check,
 	// so we'll create our own /health endpoint.
 	if r.URL.Path == "/" {
-		http.ServeFile(w, r, "/static/index.html")
+		http.ServeFile(w, r, "static/index.html")
 		return
 	}
 
 	// Serve static files
 	if strings.HasPrefix(r.URL.Path, "/static/") {
-		fs := http.StripPrefix("/static/", http.FileServer(http.Dir("/static")))
+		fs := http.StripPrefix("/static/", http.FileServer(http.Dir("static")))
 		fs.ServeHTTP(w, r)
 		return
 	}
