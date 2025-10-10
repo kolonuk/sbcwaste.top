@@ -134,9 +134,12 @@ func parseDate(dateStr string) (string, error) {
 	return parsed.Format("2006-01-02"), nil
 }
 
-func parseCollectionData(taskCtx context.Context, data *rawData) (*Collections, error) {
-	var collection1, collection2 Collection
+func parseCollectionData(taskCtx context.Context, data *rawData, debugging bool) (*Collections, error) {
+	var collections Collections
 	var firstDate1, firstDate2 string
+
+	collection1 := Collection{}
+	collection2 := Collection{}
 
 	if err := chromedp.Run(taskCtx,
 		chromedp.Text(data.h3Nodes[0].FullXPath(), &collection1.Type),
@@ -147,6 +150,14 @@ func parseCollectionData(taskCtx context.Context, data *rawData) (*Collections, 
 		return nil, fmt.Errorf("failed to extract initial collection data: %w", err)
 	}
 
+	if debugging {
+		log.Printf("Found collection types: %s and %s", collection1.Type, collection2.Type)
+		log.Printf("Found initial dates: %s and %s", firstDate1, firstDate2)
+	}
+
+	parseDates(taskCtx, data.nextThreeNodes, &collection1, &collection2, debugging)
+	parseImageURLs(data.imageURLs, &collection1, &collection2, debugging)
+
 	if d, err := parseDate(firstDate1); err == nil {
 		collection1.CollectionDates = append(collection1.CollectionDates, d)
 	}
@@ -154,35 +165,51 @@ func parseCollectionData(taskCtx context.Context, data *rawData) (*Collections, 
 		collection2.CollectionDates = append(collection2.CollectionDates, d)
 	}
 
-	// Simplified date parsing for the next three dates
-	for i, node := range data.nextThreeNodes {
+	collections.Collections = append(collections.Collections, collection1, collection2)
+
+	return &collections, nil
+}
+
+func parseDates(taskCtx context.Context, nodes []*cdp.Node, c1, c2 *Collection, debugging bool) {
+	for i, node := range nodes {
 		var text string
 		if err := chromedp.Run(taskCtx, chromedp.Text(node.FullXPath(), &text, chromedp.BySearch)); err != nil {
-			log.Printf("could not get text for node: %v", err)
+			if debugging {
+				log.Printf("could not get text for node: %v", err)
+			}
 			continue
 		}
 		for _, dateStr := range strings.Split(text, "\n") {
 			if trimmed := strings.TrimSpace(dateStr); trimmed != "" {
 				if d, err := parseDate(trimmed); err == nil {
 					if i == 0 {
-						collection1.CollectionDates = append(collection1.CollectionDates, d)
+						c1.CollectionDates = append(c1.CollectionDates, d)
 					} else {
-						collection2.CollectionDates = append(collection2.CollectionDates, d)
+						c2.CollectionDates = append(c2.CollectionDates, d)
+					}
+				} else {
+					if debugging {
+						log.Printf("Could not parse date: %s", trimmed)
 					}
 				}
 			}
 		}
 	}
+}
 
-	imageUrls := strings.Split(strings.TrimSpace(data.imageURLs), "\n")
-	if len(imageUrls) >= 2 {
-		collection1.IconURL = imageUrls[0]
-		collection2.IconURL = imageUrls[1]
+func parseImageURLs(imageURLs string, c1, c2 *Collection, debugging bool) {
+	urls := strings.Split(strings.TrimSpace(imageURLs), "\n")
+	if len(urls) >= 2 {
+		c1.IconURL = urls[0]
+		c2.IconURL = urls[1]
+		if debugging {
+			log.Printf("Found image URLs: %s and %s", c1.IconURL, c2.IconURL)
+		}
+	} else {
+		if debugging {
+			log.Printf("Could not find image URLs")
+		}
 	}
-
-	return &Collections{
-		Collections: []Collection{collection1, collection2},
-	}, nil
 }
 
 func fetchAndProcessIcons(collections *Collections) {
@@ -197,7 +224,7 @@ func fetchAndProcessIcons(collections *Collections) {
 	}
 }
 
-func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Collections, error) {
+var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (*Collections, error) {
 	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
 
 	taskCtx, cancel := chromedp.NewContext(allocatorContext)
@@ -214,7 +241,7 @@ func fetchCollectionsFromSBC(ctx context.Context, params *requestParams) (*Colle
 		return nil, err
 	}
 
-	collections, err := parseCollectionData(taskCtx, rawData)
+	collections, err := parseCollectionData(taskCtx, rawData, params.debugging)
 	if err != nil {
 		return nil, err
 	}
