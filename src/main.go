@@ -9,8 +9,9 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
-	_ "net/http/pprof"
+	// _ "net/http/pprof"
 
 	"github.com/chromedp/chromedp"
 )
@@ -47,7 +48,14 @@ func main() {
 		port = "8080" // Default port if not specified
 	}
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      nil,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
 	}
 }
@@ -76,7 +84,9 @@ func router(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/health" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok"}`))
+		if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+			log.Printf("Failed to write health check response: %v", err)
+		}
 		return
 	}
 

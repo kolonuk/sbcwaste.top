@@ -26,7 +26,9 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		http.Error(w, "Failed to encode address search results", http.StatusInternalServerError)
+	}
 }
 
 func searchAddress(query string) ([]AddressSearchResult, error) {
