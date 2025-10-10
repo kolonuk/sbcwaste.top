@@ -80,6 +80,11 @@ func router(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/api/costs" {
+		BillingHandler(w, r)
+		return
+	}
+
 	// For any other path, assume it's a waste collection request.
 	// This will handle /<uprn>/json and /<uprn>/ics
 	WasteCollection(w, r)

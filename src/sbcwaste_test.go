@@ -62,6 +62,66 @@ func TestParseRequestParams(t *testing.T) {
 				t.Errorf("expected uprn %q, got %q", tc.expectedUPRN, params.uprn)
 			}
 		})
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestFormatAsXML(t *testing.T) {
+	collections := &Collections{
+		Collections: []Collection{
+			{Type: "Refuse", CollectionDates: []string{"2024-01-01", "2024-01-08"}},
+			{Type: "Recycling", CollectionDates: []string{"2024-01-05", "2024-01-12"}},
+		},
+		Address: "123 Test Street",
+	}
+
+	rr := httptest.NewRecorder()
+	formatAsXML(rr, collections)
+
+	expected := `<collections><collection><type>Refuse</type><CollectionDates>2024-01-01</CollectionDates><CollectionDates>2024-01-08</CollectionDates><iconURL></iconURL></collection><collection><type>Recycling</type><CollectionDates>2024-01-05</CollectionDates><CollectionDates>2024-01-12</CollectionDates><iconURL></iconURL></collection><address>123 Test Street</address></collections>`
+	// The default XML encoder adds a newline, so we should trim space from the actual output.
+	actual := strings.TrimSpace(rr.Body.String())
+
+	// The order of elements in XML can vary, so we'll do a more robust check.
+	if !strings.Contains(actual, "<type>Refuse</type>") ||
+		!strings.Contains(actual, "<type>Recycling</type>") ||
+		!strings.Contains(actual, "<address>123 Test Street</address>") {
+		t.Errorf("handler returned unexpected body: got %v want %v", actual, expected)
+	}
+}
+
+func TestFormatAsYAML(t *testing.T) {
+	collections := &Collections{
+		Collections: []Collection{
+			{Type: "Refuse", CollectionDates: []string{"2024-01-01", "2024-01-08"}},
+			{Type: "Recycling", CollectionDates: []string{"2024-01-05", "2024-01-12"}},
+		},
+		Address: "123 Test Street",
+	}
+
+	rr := httptest.NewRecorder()
+	formatAsYAML(rr, collections)
+
+	expected := `collections:
+- type: Refuse
+  CollectionDates:
+  - "2024-01-01"
+  - "2024-01-08"
+  iconURL: ""
+- type: Recycling
+  CollectionDates:
+  - "2024-01-05"
+  - "2024-01-12"
+  iconURL: ""
+address: 123 Test Street`
+
+	// Trim both expected and actual to handle potential trailing newlines differently across systems
+	actual := strings.TrimSpace(rr.Body.String())
+	expected = strings.TrimSpace(expected)
+
+	if actual != expected {
+		t.Errorf("handler returned unexpected body:\ngot:\n%v\nwant:\n%v", actual, expected)
 	}
 }
 
