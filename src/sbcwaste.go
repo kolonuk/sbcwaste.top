@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"log"
@@ -21,20 +22,22 @@ import (
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
+	"gopkg.in/yaml.v2"
 )
 
 // A single collection
 type Collection struct {
-	Type            string   `json:"type"`
-	CollectionDates []string `json:"CollectionDates"`
-	IconURL         string   `json:"iconURL"`
-	IconDataURI     string   `json:"iconDataURI,omitempty"`
+	Type            string   `json:"type" xml:"type" yaml:"type"`
+	CollectionDates []string `json:"CollectionDates" xml:"CollectionDates" yaml:"CollectionDates"`
+	IconURL         string   `json:"iconURL" xml:"iconURL" yaml:"iconURL"`
+	IconDataURI     string   `json:"iconDataURI,omitempty" xml:"iconDataURI,omitempty" yaml:"iconDataURI,omitempty"`
 }
 
 // All the collections
 type Collections struct {
-	Collections []Collection `json:"collections"`
-	Address     string       `json:"address"`
+	XMLName     xml.Name     `json:"-" xml:"collections" yaml:"-"`
+	Collections []Collection `json:"collections" xml:"collection" yaml:"collections"`
+	Address     string       `json:"address" xml:"address" yaml:"address"`
 }
 
 type requestParams struct {
@@ -275,6 +278,10 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		formatAsJSON(w, collections)
 	case "ics":
 		formatAsICS(w, collections, params)
+	case "xml":
+		formatAsXML(w, collections)
+	case "yaml":
+		formatAsYAML(w, collections)
 	default:
 		http.Error(w, "Invalid output format", http.StatusBadRequest)
 	}
@@ -285,6 +292,23 @@ func formatAsJSON(w http.ResponseWriter, collections *Collections) {
 	if err := json.NewEncoder(w).Encode(collections); err != nil {
 		http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
 	}
+}
+
+func formatAsXML(w http.ResponseWriter, collections *Collections) {
+	w.Header().Set("Content-Type", "application/xml")
+	if err := xml.NewEncoder(w).Encode(collections); err != nil {
+		http.Error(w, "Failed to marshal XML", http.StatusInternalServerError)
+	}
+}
+
+func formatAsYAML(w http.ResponseWriter, collections *Collections) {
+	w.Header().Set("Content-Type", "application/x-yaml")
+	yamlData, err := yaml.Marshal(collections)
+	if err != nil {
+		http.Error(w, "Failed to marshal YAML", http.StatusInternalServerError)
+		return
+	}
+	w.Write(yamlData)
 }
 
 func showHelp(w http.ResponseWriter) {
