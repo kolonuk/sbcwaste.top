@@ -53,22 +53,30 @@ func main() {
 }
 
 func router(w http.ResponseWriter, r *http.Request) {
+	// The GKE Ingress controller automatically adds a /healthz endpoint,
+	// which returns 200 if the app is running. However, we want to be able
+	// to run this locally, and also to have a more meaningful health check,
+	// so we'll create our own /health endpoint.
 	if r.URL.Path == "/" {
-		http.ServeFile(w, r, "static/index.html")
+		http.ServeFile(w, r, "/static/index.html")
 		return
 	}
-	if r.URL.Path == "/style.css" {
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		http.ServeFile(w, r, "static/style.css")
+
+	// Serve static files
+	if strings.HasPrefix(r.URL.Path, "/static/") {
+		fs := http.StripPrefix("/static/", http.FileServer(http.Dir("/static")))
+		fs.ServeHTTP(w, r)
 		return
 	}
-	if r.URL.Path == "/script.js" {
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		http.ServeFile(w, r, "static/script.js")
-		return
-	}
+
 	if r.URL.Path == "/search-address" {
 		SearchAddressHandler(w, r)
+		return
+	}
+	if r.URL.Path == "/health" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ok"}`))
 		return
 	}
 

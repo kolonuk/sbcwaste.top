@@ -41,6 +41,9 @@ RUN apt-get update && apt-get install -y \
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
 
+# Copy the static assets
+COPY static /static
+
 # Set the environment variable for the port. Cloud Run will set this value.
 ENV PORT 8080
 
