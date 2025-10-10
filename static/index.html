@@ -11,6 +11,7 @@
         <header>
             <h1>Swindon Bin Collection Calendar</h1>
             <p>Get your bin collection dates from the Swindon Borough Council website and easily add them to your calendar.</p>
+            <p>This service uses data from the official <a id="sbc-website-link" href="https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days" target="_blank">Swindon Borough Council website</a>.</p>
         </header>
 
         <section id="address-lookup">
@@ -70,8 +71,18 @@
         <section id="advanced-usage">
             <details>
                 <summary><h3>For Advanced Users: API Usage</h3></summary>
-                <p>You can also access the collection data directly in JSON format. This is useful for developers or for integrating with other applications.</p>
-                <code>/&lt;UPRN&gt;/json</code>
+                <p>You can also access the collection data directly in various formats. This is useful for developers or for integrating with other applications.</p>
+                <p>Append the desired format to the UPRN in the URL:</p>
+                <ul>
+                    <li><code>/&lt;UPRN&gt;/json</code> - JSON format</li>
+                    <li><code>/&lt;UPRN&gt;/xml</code> - XML format</li>
+                    <li><code>/&lt;UPRN&gt;/yaml</code> - YAML format</li>
+                    <li><code>/&lt;UPRN&gt;/ics</code> - iCalendar format</li>
+                </ul>
+                <p>You can also add the following query parameter:</p>
+                <ul>
+                    <li><code>?icons=yes</code> - Include base64-encoded icon data in the output (JSON, XML, YAML only).</li>
+                </ul>
             </details>
         </section>
 

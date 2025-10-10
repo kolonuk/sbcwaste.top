@@ -4,7 +4,7 @@ go mod tidy
 # Define the tag for the logger
 TAG="sbcwaste"
 
-until go run . 2>&1 | while IFS= read -r line; do
+until go run ./src 2>&1 | while IFS= read -r line; do
     echo "$line" | logger -t $TAG
 done; do
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Server crashed with exit code $?. Respawning.." | logger -t $TAG
