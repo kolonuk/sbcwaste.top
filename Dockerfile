@@ -1,5 +1,5 @@
 # Use the official Go image to build the Go program
-FROM golang:1.24.3 AS builder
+FROM golang:1.24.6 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -15,7 +15,7 @@ COPY src/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
 # Use a distroless base image for security and a smaller footprint
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 # Install necessary dependencies for Chrome/Chromium
 RUN apt-get update && apt-get install -y \
