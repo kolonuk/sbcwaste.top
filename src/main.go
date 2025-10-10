@@ -41,7 +41,13 @@ func main() {
 		os.Exit(0)
 	}()
 
-	http.HandleFunc("/", gzipMiddleware(router))
+	// Create a new ServeMux to handle routing.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", router)
+
+	// Chain the middleware. The request will pass through the rate limiter first,
+	// then the gzip handler, and finally to the router.
+	handler := rateLimit(gzipMiddleware(mux))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -50,11 +56,12 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + port,
-		Handler:      nil,
+		Handler:      handler, // Use the chained handler
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
+	log.Printf("Starting server on port %s", port)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
 	}
@@ -100,18 +107,17 @@ func router(w http.ResponseWriter, r *http.Request) {
 	WasteCollection(w, r)
 }
 
-
-func gzipMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
 			w.Header().Set("Content-Encoding", "gzip")
-			next(gzipResponseWriter{Writer: gz, ResponseWriter: w}, r)
+			next.ServeHTTP(gzipResponseWriter{Writer: gz, ResponseWriter: w}, r)
 		} else {
-			next(w, r)
+			next.ServeHTTP(w, r)
 		}
-	}
+	})
 }
 
 type gzipResponseWriter struct {
