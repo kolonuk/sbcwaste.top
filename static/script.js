@@ -8,22 +8,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const generateIcsLink = () => {
         const uprn = uprnIcsInput.value.trim();
-        const sbcLink = document.getElementById('sbc-website-link');
         const sbcBaseUrl = 'https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days';
 
         if (uprn) {
             const icsLink = `${window.location.origin}/${uprn}/ics`;
-            icsLinkContainer.innerHTML = `<p><strong>Your calendar link is ready!</strong></p><p><a href="${icsLink}" target="_blank">${icsLink}</a></p><p>Now, follow the instructions in Step 3 below to add it to your calendar.</p>`;
-            sbcLink.href = `${sbcBaseUrl}?addressList=${uprn}&uprnSubmit=Yes`;
+            const sbcCheckLink = `${sbcBaseUrl}?uprn=${uprn}&addressList=${uprn}&uprnSubmit=Yes`;
+            icsLinkContainer.innerHTML = `<p><strong>Your calendar link is ready!</strong></p>
+                                          <p><a href="${icsLink}" target="_blank">${icsLink}</a></p>
+                                          <p>You can also <a href="${sbcCheckLink}" target="_blank">check your collection days on the SBC website</a> to verify the data.</p>
+                                          <p>Now, follow the instructions in Step 3 below to add it to your calendar.</p>`;
         } else {
             icsLinkContainer.innerHTML = '';
-            sbcLink.href = sbcBaseUrl;
         }
     };
 
     uprnIcsInput.addEventListener('input', generateIcsLink);
 
-    searchBtn.addEventListener('click', () => {
+    const performSearch = () => {
         const query = addressSearch.value.trim();
         if (query) {
             searchResults.textContent = 'Searching...';
@@ -54,6 +55,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error('Error fetching search results:', error);
                     searchResults.textContent = 'Failed to fetch results.';
                 });
+        }
+    };
+
+    searchBtn.addEventListener('click', performSearch);
+
+    addressSearch.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            performSearch();
         }
     });
 
