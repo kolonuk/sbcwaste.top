@@ -61,11 +61,9 @@ func TestParseRequestParams(t *testing.T) {
 			if params.uprn != tc.expectedUPRN {
 				t.Errorf("expected uprn %q, got %q", tc.expectedUPRN, params.uprn)
 			}
-		})
-	"net/http/httptest"
-	"strings"
-	"testing"
-)
+		}
+    }
+}
 
 func TestFormatAsXML(t *testing.T) {
 	collections := &Collections{
@@ -174,6 +172,6 @@ func TestParseDate(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("parseDate() = %v, want %v", got, tc.want)
 			}
-		})
+		}
 	}
 }
