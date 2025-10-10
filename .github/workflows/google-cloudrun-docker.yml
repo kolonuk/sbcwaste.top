@@ -37,6 +37,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run tests
+        run: go test ./...
+
       - name: Set up environment
         id: set-env
         run: |
@@ -101,21 +109,40 @@ jobs:
 
       - name: Verify Application Health
         run: |
-          echo "Verifying application health for https://${{ env.DOMAIN }}/"
+          echo "Verifying application health for https://${{ env.DOMAIN }}"
+          # First, check the /health endpoint
           for i in {1..10}; do
-            response_code=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.DOMAIN }}/)
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/health")
             if [ "$response_code" == "200" ]; then
-              body=$(curl -s https://${{ env.DOMAIN }}/)
-              if echo "$body" | grep -q "sbcwaste - Swindon Borough Council Waste Collection API"; then
-                echo "Health check successful."
-                exit 0
+              body=$(curl -s "https://${{ env.DOMAIN }}/health")
+              if echo "$body" | grep -q '{"status": "ok"}'; then
+                echo "Health check successful on /health endpoint."
+                break
               else
-                echo "Attempt $i: Application is up, but response is not as expected. Waiting 30 seconds..."
+                echo "Attempt $i: /health endpoint is up, but response is not as expected. Waiting 30 seconds..."
               fi
             else
-              echo "Attempt $i: Application not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
+              echo "Attempt $i: /health endpoint not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
             fi
             sleep 30
           done
-          echo "Health check failed after several attempts."
+
+          if [ $i -eq 10 ]; then
+            echo "Health check on /health endpoint failed after several attempts."
+            exit 1
+          fi
+
+          # Second, check the root path to ensure the app is serving static assets
+          for i in {1..10}; do
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/")
+            if [ "$response_code" == "200" ]; then
+              echo "Health check successful on root path."
+              exit 0
+            else
+              echo "Attempt $i: Root path not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
+            fi
+            sleep 30
+          done
+
+          echo "Health check on root path failed after several attempts."
           exit 1
