@@ -46,8 +46,8 @@ func main() {
 	mux.HandleFunc("/", router)
 
 	// Chain the middleware. The request will pass through the rate limiter first,
-	// then the gzip handler, and finally to the router.
-	handler := rateLimit(gzipMiddleware(mux))
+	// then the gzip handler, then the security headers handler, and finally to the router.
+	handler := rateLimit(gzipMiddleware(securityHeadersMiddleware(mux)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -73,14 +73,30 @@ func router(w http.ResponseWriter, r *http.Request) {
 	// to run this locally, and also to have a more meaningful health check,
 	// so we'll create our own /health endpoint.
 	if r.URL.Path == "/" {
+		// Only set cache headers for static content in non-development environments.
+		if os.Getenv("APP_ENV") != "development" {
+			// Cache for 1 hour.
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
 		http.ServeFile(w, r, "static/index.html")
 		return
 	}
 
 	// Serve static files
 	if strings.HasPrefix(r.URL.Path, "/static/") {
+		// Only set cache headers for static content in non-development environments.
+		if os.Getenv("APP_ENV") != "development" {
+			// Cache for 1 day.
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
 		fs := http.StripPrefix("/static/", http.FileServer(http.Dir("static")))
 		fs.ServeHTTP(w, r)
+		return
+	}
+
+	// Serve /.well-known/security.txt
+	if r.URL.Path == "/.well-known/security.txt" {
+		http.ServeFile(w, r, "static/.well-known/security.txt")
 		return
 	}
 
@@ -138,4 +154,19 @@ func (w gzipResponseWriter) Header() http.Header {
 // WriteHeader calls the WriteHeader method on the embedded http.ResponseWriter.
 func (w gzipResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add various security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+
+		// Only add the HSTS header in non-development environments
+		if os.Getenv("APP_ENV") != "development" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

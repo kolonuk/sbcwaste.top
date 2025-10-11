@@ -1,0 +1,11 @@
+# humanstxt.org
+# The humans behind the screen
+
+# TEAM
+Developer: Jules
+
+# SITE
+Last update: 2025-10-11
+Standards: HTML5, CSS3
+Components: Go, a sprinkle of Javascript
+Software: Visual Studio Code
