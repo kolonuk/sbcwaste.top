@@ -20,25 +20,30 @@ import (
 // Global variable to hold the allocator context
 var allocatorContext context.Context
 
-// findChromium returns the path to the Chromium executable, or a default if not found.
+// findChromium returns the path to the google-chrome executable, or an empty string if not found.
 func findChromium() string {
 	for _, path := range []string{
+		"google-chrome",
 		"chromium-browser",
 		"chromium",
-		"google-chrome",
 	} {
 		if _, err := exec.LookPath(path); err == nil {
 			return path
 		}
 	}
-	// Fallback to the hardcoded path
-	return "/usr/bin/chromium"
+	// Return empty string if no browser is found
+	return ""
 }
 
 func main() {
+	browserPath := findChromium()
+	if browserPath == "" {
+		log.Fatalf("No Chrome or Chromium browser found. Please install one.")
+	}
+
 	// Create a new chromedp allocator
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(findChromium()),
+		chromedp.ExecPath(browserPath),
 		chromedp.Flag("no-sandbox", true), // Running as root requires this
 		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
 	)
