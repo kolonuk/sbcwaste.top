@@ -134,8 +134,75 @@ a:hover {
     text-decoration: underline;
 }
 
+#ics-actions-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+#copy-ics-btn {
+    padding: 8px 12px;
+    font-size: 20px;
+    background-color: #e9ecef;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#copy-ics-btn:hover {
+    background-color: #dcdcdc;
+}
+
+.buttons-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.calendar-btn {
+    padding: 8px 12px;
+    border-radius: 5px;
+    text-decoration: none;
+    color: white !important;
+    font-weight: bold;
+    display: inline-block;
+    text-align: center;
+}
+
+.google-btn { background-color: #4285F4; }
+.outlook-btn { background-color: #0072C6; }
+.apple-btn { background-color: #000000; }
+
+
+.link-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.link-wrapper a {
+    word-break: break-all;
+}
+
 /* Dark Mode Styles */
 @media (prefers-color-scheme: dark) {
+    #copy-ics-btn {
+        background-color: #444;
+        border-color: #555;
+        color: #e0e0e0;
+    }
+
+    #copy-ics-btn:hover {
+        background-color: #5a5a5a;
+    }
+
+    .apple-btn {
+        background-color: #f0f0f0;
+        color: #121212 !important;
+    }
+
     body {
         background-color: #121212;
         color: #e0e0e0;
