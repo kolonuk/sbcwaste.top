@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -19,10 +20,25 @@ import (
 // Global variable to hold the allocator context
 var allocatorContext context.Context
 
+// findChromium returns the path to the Chromium executable, or a default if not found.
+func findChromium() string {
+	for _, path := range []string{
+		"chromium-browser",
+		"chromium",
+		"google-chrome",
+	} {
+		if _, err := exec.LookPath(path); err == nil {
+			return path
+		}
+	}
+	// Fallback to the hardcoded path
+	return "/usr/bin/chromium"
+}
+
 func main() {
 	// Create a new chromedp allocator
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath("/usr/bin/chromium"),
+		chromedp.ExecPath(findChromium()),
 		chromedp.Flag("no-sandbox", true), // Running as root requires this
 		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
 	)
@@ -43,11 +59,24 @@ func main() {
 
 	// Create a new ServeMux to handle routing.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", router)
+
+	// Register handlers for each route.
+	mux.Handle("/", http.HandlerFunc(serveIndex))
+	mux.Handle("/static/", Gzip(cacheControlMiddleware(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))))
+	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
+	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
+	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
+	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
+	mux.Handle("/api/waste", http.HandlerFunc(WasteCollection))
+
+	// The default handler for waste collection lookups. This will catch any requests
+	// that don't match the other handlers, which is the desired behavior for
+	// the /<uprn>/<format> endpoint.
+	mux.Handle("/", http.HandlerFunc(WasteCollection))
 
 	// Chain the middleware. The request will pass through the rate limiter first,
-	// then the gzip handler, then the security headers handler, and finally to the router.
-	handler := rateLimit(gzipMiddleware(securityHeadersMiddleware(mux)))
+	// then the security headers handler, and finally to the router.
+	handler := rateLimit(securityHeadersMiddleware(mux))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -67,91 +96,63 @@ func main() {
 	}
 }
 
-func router(w http.ResponseWriter, r *http.Request) {
-	// The GKE Ingress controller automatically adds a /healthz endpoint,
-	// which returns 200 if the app is running. However, we want to be able
-	// to run this locally, and also to have a more meaningful health check,
-	// so we'll create our own /health endpoint.
-	if r.URL.Path == "/" {
-		// Only set cache headers for static content in non-development environments.
-		if os.Getenv("APP_ENV") != "development" {
-			// Cache for 1 hour.
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-		}
-		http.ServeFile(w, r, "static/index.html")
-		return
+func serveIndex(w http.ResponseWriter, r *http.Request) {
+	// Only set cache headers for static content in non-development environments.
+	if os.Getenv("APP_ENV") != "development" {
+		// Cache for 1 hour.
+		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
+	http.ServeFile(w, r, "static/index.html")
+}
 
-	// Serve static files
-	if strings.HasPrefix(r.URL.Path, "/static/") {
-		// Only set cache headers for static content in non-development environments.
+func serveSecurityTxt(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "static/.well-known/security.txt")
+}
+
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+		log.Printf("Failed to write health check response: %v", err)
+	}
+}
+
+func Gzip(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		next.ServeHTTP(gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+	})
+}
+
+func cacheControlMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if os.Getenv("APP_ENV") != "development" {
 			// Cache for 1 day.
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 		}
-		fs := http.StripPrefix("/static/", http.FileServer(http.Dir("static")))
-		fs.ServeHTTP(w, r)
-		return
-	}
-
-	// Serve /.well-known/security.txt
-	if r.URL.Path == "/.well-known/security.txt" {
-		http.ServeFile(w, r, "static/.well-known/security.txt")
-		return
-	}
-
-	if r.URL.Path == "/search-address" {
-		SearchAddressHandler(w, r)
-		return
-	}
-	if r.URL.Path == "/health" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
-			log.Printf("Failed to write health check response: %v", err)
-		}
-		return
-	}
-
-	if r.URL.Path == "/api/costs" {
-		BillingHandler(w, r)
-		return
-	}
-
-	// For any other path, assume it's a waste collection request.
-	// This will handle /<uprn>/json and /<uprn>/ics
-	WasteCollection(w, r)
-}
-
-func gzipMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			gz := gzip.NewWriter(w)
-			defer gz.Close()
-			w.Header().Set("Content-Encoding", "gzip")
-			next.ServeHTTP(gzipResponseWriter{Writer: gz, ResponseWriter: w}, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
+		next.ServeHTTP(w, r)
 	})
 }
 
 type gzipResponseWriter struct {
 	http.ResponseWriter
-	*gzip.Writer
+	Writer *gzip.Writer
 }
 
-// Write calls the Write method on the gzip.Writer, which is what you want for the gzip middleware.
-func (w gzipResponseWriter) Write(data []byte) (int, error) {
-	return w.Writer.Write(data)
+func (w gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
 }
 
-// Header calls the Header method on the embedded http.ResponseWriter.
 func (w gzipResponseWriter) Header() http.Header {
 	return w.ResponseWriter.Header()
 }
 
-// WriteHeader calls the WriteHeader method on the embedded http.ResponseWriter.
 func (w gzipResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
