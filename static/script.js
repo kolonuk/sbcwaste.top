@@ -5,30 +5,66 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateIcsBtn = document.getElementById('generate-ics-btn');
     const uprnIcsInput = document.getElementById('uprn-ics-input');
     const icsLinkContainer = document.getElementById('ics-link-container');
+    const icsActionsContainer = document.getElementById('ics-actions-container');
 
     const generateIcsLink = () => {
         const uprn = uprnIcsInput.value.trim();
         const sbcBaseUrl = 'https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days';
 
+        // Clear previous content
+        icsLinkContainer.innerHTML = '';
+        icsActionsContainer.innerHTML = '';
+
         if (uprn) {
             const icsLink = `${window.location.origin}/${uprn}/ics`;
+            const encodedIcsLink = encodeURIComponent(icsLink);
+
+            // 1. Display the main link
             const sbcCheckLink = `${sbcBaseUrl}?uprn=${uprn}&addressList=${uprn}&uprnSubmit=Yes`;
             icsLinkContainer.innerHTML = `<p><strong>Your calendar link is ready!</strong></p>
-                                          <p><a href="${icsLink}" target="_blank">${icsLink}</a></p>
+                                          <div class="link-wrapper">
+                                            <a href="${icsLink}" target="_blank">${icsLink}</a>
+                                          </div>
                                           <p>You can also <a href="${sbcCheckLink}" target="_blank">check your collection days on the SBC website</a> to verify the data.</p>
-                                          <p>Now, follow the instructions in Step 3 below to add it to your calendar.</p>`;
-        } else {
-            icsLinkContainer.innerHTML = '';
+                                          <p>Now, copy the link or use the buttons below to add it to your calendar.</p>`;
+
+            // 2. Create action buttons (Copy, Google, Outlook, Apple)
+            const copyButton = document.createElement('button');
+            copyButton.innerHTML = '📋'; // Clipboard emoji
+            copyButton.title = 'Copy to Clipboard';
+            copyButton.id = 'copy-ics-btn';
+            copyButton.addEventListener('click', () => {
+                navigator.clipboard.writeText(icsLink).then(() => {
+                    copyButton.textContent = '✅';
+                    setTimeout(() => { copyButton.innerHTML = '📋'; }, 2000);
+                }, () => {
+                    alert('Failed to copy');
+                });
+            });
+
+            const googleCalendarLink = `https://calendar.google.com/calendar/render?cid=${encodedIcsLink}`;
+            const outlookCalendarLink = `https://outlook.live.com/calendar/0/subscriptions/webcal/source?url=${encodedIcsLink}`;
+            const appleCalendarLink = `webcal://${icsLink.replace(/^https?:\/\//, '')}`;
+
+            const googleButton = `<a href="${googleCalendarLink}" target="_blank" class="calendar-btn google-btn">Add to Google Calendar</a>`;
+            const outlookButton = `<a href="${outlookCalendarLink}" target="_blank" class="calendar-btn outlook-btn">Add to Outlook</a>`;
+            const appleButton = `<a href="${appleCalendarLink}" class="calendar-btn apple-btn">Add to Apple Calendar</a>`;
+
+            const buttonsWrapper = document.createElement('div');
+            buttonsWrapper.className = 'buttons-wrapper';
+            buttonsWrapper.innerHTML = `${googleButton}${outlookButton}${appleButton}`;
+
+            icsActionsContainer.appendChild(copyButton);
+            icsActionsContainer.appendChild(buttonsWrapper);
+
         }
     };
-
-    uprnIcsInput.addEventListener('input', generateIcsLink);
 
     const performSearch = () => {
         const query = addressSearch.value.trim();
         if (query) {
             searchResults.textContent = 'Searching...';
-            fetch(`/search-address?q=${encodeURIComponent(query)}`)
+            fetch(`search-address?q=${encodeURIComponent(query)}`)
                 .then(response => response.json())
                 .then(data => {
                     searchResults.innerHTML = '';
