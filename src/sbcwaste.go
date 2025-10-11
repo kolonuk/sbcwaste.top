@@ -1,6 +1,6 @@
 // sbcwaste.go
 // Date: 2024-07-15
-// Version: 0.2.0
+// Version: 0.2.2
 // License: GPL-3.0
 // License Details: https://www.gnu.org/licenses/gpl-3.0.en.html
 //
@@ -19,10 +19,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/chromedp"
+	"github.com/PuerkitoBio/goquery"
 	"gopkg.in/yaml.v2"
 )
 
@@ -48,12 +48,30 @@ type requestParams struct {
 	showIcons bool
 }
 
-// rawData holds the raw data scraped from the SBC website.
-type rawData struct {
-	h3Nodes        []*cdp.Node
-	dateNodes      []*cdp.Node
-	nextThreeNodes []*cdp.Node
-	imageURLs      string
+var iconCache = struct {
+	sync.RWMutex
+	data map[string]string
+}{data: make(map[string]string)}
+
+func getIcon(url string) (string, error) {
+	iconCache.RLock()
+	cachedIcon, ok := iconCache.data[url]
+	iconCache.RUnlock()
+	if ok {
+		return cachedIcon, nil
+	}
+
+	// If not in cache, fetch, convert, and cache it
+	iconDataURI, err := convertImageToBase64URI(url)
+	if err != nil {
+		return "", err
+	}
+
+	iconCache.Lock()
+	iconCache.data[url] = iconDataURI
+	iconCache.Unlock()
+
+	return iconDataURI, nil
 }
 
 func parseRequestParams(r *http.Request) (*requestParams, error) {
@@ -89,165 +107,52 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 	return params, nil
 }
 
-func extractCollectionData(taskCtx context.Context, url string) (*rawData, error) {
-	data := &rawData{}
-
-	tasks := chromedp.Tasks{
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(`div.bin-collection-content`, chromedp.ByQuery),
-		chromedp.Nodes(`div.content-left h3`, &data.h3Nodes, chromedp.ByQueryAll),
-		chromedp.Nodes(`span.nextCollectionDate`, &data.dateNodes, chromedp.ByQueryAll),
-		chromedp.Nodes(`div.row.collection-next > div.row`, &data.nextThreeNodes, chromedp.ByQueryAll),
-		chromedp.Evaluate(`
-			(function() {
-				let images = [];
-				let bins = document.querySelectorAll('.bin-icons');
-				bins.forEach(bin => {
-					let style = window.getComputedStyle(bin);
-					let bgImage = style.getPropertyValue('background-image');
-					if (bgImage && bgImage.startsWith('url("')) {
-						bgImage = bgImage.slice(5, -2);
-						images.push(bgImage);
-					}
-				});
-				return images.join('\n');
-			})()
-		`, &data.imageURLs),
-	}
-
-	if err := chromedp.Run(taskCtx, tasks); err != nil {
-		return nil, fmt.Errorf("failed to run chromedp tasks: %w", err)
-	}
-
-	if len(data.h3Nodes) < 2 || len(data.dateNodes) < 2 {
-		return nil, errors.New("failed to find all required nodes on the page")
-	}
-
-	return data, nil
-}
-
-func parseDate(dateStr string) (string, error) {
-	parsed, err := time.Parse("Monday, 2 January 2006", dateStr)
-	if err != nil {
-		return "", err
-	}
-	return parsed.Format("2006-01-02"), nil
-}
-
-func parseCollectionData(taskCtx context.Context, data *rawData, debugging bool) (*Collections, error) {
-	var collections Collections
-	var firstDate1, firstDate2 string
-
-	collection1 := Collection{}
-	collection2 := Collection{}
-
-	if err := chromedp.Run(taskCtx,
-		chromedp.Text(data.h3Nodes[0].FullXPath(), &collection1.Type),
-		chromedp.Text(data.dateNodes[0].FullXPath(), &firstDate1),
-		chromedp.Text(data.h3Nodes[1].FullXPath(), &collection2.Type),
-		chromedp.Text(data.dateNodes[1].FullXPath(), &firstDate2),
-	); err != nil {
-		return nil, fmt.Errorf("failed to extract initial collection data: %w", err)
-	}
-
-	if debugging {
-		log.Printf("Found collection types: %s and %s", collection1.Type, collection2.Type)
-		log.Printf("Found initial dates: %s and %s", firstDate1, firstDate2)
-	}
-
-	parseDates(taskCtx, data.nextThreeNodes, &collection1, &collection2, debugging)
-	parseImageURLs(data.imageURLs, &collection1, &collection2, debugging)
-
-	if d, err := parseDate(firstDate1); err == nil {
-		collection1.CollectionDates = append(collection1.CollectionDates, d)
-	}
-	if d, err := parseDate(firstDate2); err == nil {
-		collection2.CollectionDates = append(collection2.CollectionDates, d)
-	}
-
-	collections.Collections = append(collections.Collections, collection1, collection2)
-
-	return &collections, nil
-}
-
-func parseDates(taskCtx context.Context, nodes []*cdp.Node, c1, c2 *Collection, debugging bool) {
-	for i, node := range nodes {
-		var text string
-		if err := chromedp.Run(taskCtx, chromedp.Text(node.FullXPath(), &text, chromedp.BySearch)); err != nil {
-			if debugging {
-				log.Printf("could not get text for node: %v", err)
-			}
-			continue
-		}
-		for _, dateStr := range strings.Split(text, "\n") {
-			if trimmed := strings.TrimSpace(dateStr); trimmed != "" {
-				if d, err := parseDate(trimmed); err == nil {
-					if i == 0 {
-						c1.CollectionDates = append(c1.CollectionDates, d)
-					} else {
-						c2.CollectionDates = append(c2.CollectionDates, d)
-					}
-				} else {
-					if debugging {
-						log.Printf("Could not parse date: %s", trimmed)
-					}
-				}
-			}
-		}
-	}
-}
-
-func parseImageURLs(imageURLs string, c1, c2 *Collection, debugging bool) {
-	urls := strings.Split(strings.TrimSpace(imageURLs), "\n")
-	if len(urls) >= 2 {
-		c1.IconURL = urls[0]
-		c2.IconURL = urls[1]
-		if debugging {
-			log.Printf("Found image URLs: %s and %s", c1.IconURL, c2.IconURL)
-		}
-	} else {
-		if debugging {
-			log.Printf("Could not find image URLs")
-		}
-	}
-}
-
-func fetchAndProcessIcons(collections *Collections) {
-	for i := range collections.Collections {
-		if collections.Collections[i].IconURL != "" {
-			var err error
-			collections.Collections[i].IconDataURI, err = convertImageToBase64URI(collections.Collections[i].IconURL)
-			if err != nil {
-				log.Printf("Failed to convert image %s: %v\n", collections.Collections[i].IconURL, err)
-			}
-		}
-	}
-}
-
+// fetchCollectionsFromSBC fetches waste collection data from the SBC website using HTTP requests.
 var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (*Collections, error) {
-	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
-
-	taskCtx, cancel := chromedp.NewContext(allocatorContext)
-	defer cancel()
-	taskCtx, cancel = context.WithTimeout(taskCtx, 15*time.Second)
-	defer cancel()
-
 	if params.debugging {
-		log.Printf("Fetching URL: %s", url)
+		log.Printf("Fetching URL: https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=%s&uprnSubmit=Yes", params.uprn)
 	}
 
-	rawData, err := extractCollectionData(taskCtx, url)
+	// Create a new HTTP client with a timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList="+params.uprn+"&uprnSubmit=Yes", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	collections, err := parseCollectionData(taskCtx, rawData, params.debugging)
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("bad status code: %d", res.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+
+	collections, err := parseCollections(doc)
 	if err != nil {
 		return nil, err
 	}
 
 	if params.showIcons {
-		fetchAndProcessIcons(collections)
+		for i := range collections.Collections {
+			if collections.Collections[i].IconURL != "" {
+				iconDataURI, err := getIcon(collections.Collections[i].IconURL)
+				if err != nil {
+					log.Printf("Failed to get icon %s: %v", collections.Collections[i].IconURL, err)
+					continue
+				}
+				collections.Collections[i].IconDataURI = iconDataURI
+			}
+		}
 	}
 
 	address, err := getAddressFromUPRN(params.uprn, params.debugging)
@@ -258,6 +163,70 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 	}
 
 	return collections, nil
+}
+
+func parseDate(dateStr string) (string, error) {
+	parsed, err := time.Parse("Monday, 2 January 2006", dateStr)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Format("2006-01-02"), nil
+}
+
+// parseCollections parses the HTML document and extracts collection data.
+func parseCollections(doc *goquery.Document) (*Collections, error) {
+	var collections Collections
+	var types, dates []string
+
+	doc.Find("div.bin-collection-content h3").Each(func(i int, s *goquery.Selection) {
+		types = append(types, s.Text())
+	})
+
+	doc.Find("span.nextCollectionDate").Each(func(i int, s *goquery.Selection) {
+		dates = append(dates, s.Text())
+	})
+
+	if len(types) < 2 || len(dates) < 2 {
+		return nil, errors.New("failed to find all required nodes on the page")
+	}
+
+	var collectionsList []Collection
+	for i := 0; i < 2; i++ {
+		parsedDate, err := parseDate(dates[i])
+		if err != nil {
+			log.Printf("Could not parse date %s: %v", dates[i], err)
+			continue
+		}
+		collectionsList = append(collectionsList, Collection{
+			Type:            types[i],
+			CollectionDates: []string{parsedDate},
+		})
+	}
+
+	doc.Find("div.row.collection-next > div.row").Each(func(i int, s *goquery.Selection) {
+		s.Find("p").Each(func(j int, p *goquery.Selection) {
+			dateStr := strings.TrimSpace(p.Text())
+			if parsedDate, err := parseDate(dateStr); err == nil {
+				if i < len(collectionsList) {
+					collectionsList[i].CollectionDates = append(collectionsList[i].CollectionDates, parsedDate)
+				}
+			}
+		})
+	})
+
+	doc.Find(".bin-icons").Each(func(i int, s *goquery.Selection) {
+		style, _ := s.Attr("style")
+		re := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
+		matches := re.FindStringSubmatch(style)
+		if len(matches) > 1 {
+			if i < len(collectionsList) {
+				collectionsList[i].IconURL = matches[1]
+			}
+		}
+	})
+
+	collections.Collections = collectionsList
+	return &collections, nil
 }
 
 func WasteCollection(w http.ResponseWriter, r *http.Request) {

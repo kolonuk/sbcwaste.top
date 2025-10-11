@@ -50,7 +50,7 @@ func newSafeClient() *http.Client {
 var HTTPClient = newSafeClient()
 
 // convertImageToBase64 fetches an image from a URL and converts it to a base64 data URI string
-func convertImageToBase64URI(imageUrl string) (string, error) {
+var convertImageToBase64URI = func(imageUrl string) (string, error) {
 	// Fetch the image
 	// #nosec G107 - Mitigated by using a safe http client.
 	resp, err := HTTPClient.Get(imageUrl)
