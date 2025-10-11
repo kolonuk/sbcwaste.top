@@ -1,6 +1,6 @@
 // sbcwaste.go
 // Date: 2024-07-15
-// Version: 0.2.1
+// Version: 0.2.2
 // License: GPL-3.0
 // License Details: https://www.gnu.org/licenses/gpl-3.0.en.html
 //
@@ -53,53 +53,25 @@ var iconCache = struct {
 	data map[string]string
 }{data: make(map[string]string)}
 
-var lastCacheRefresh time.Time
-
-const cacheDuration = 7 * 24 * time.Hour
-
 func getIcon(url string) (string, error) {
 	iconCache.RLock()
-	if time.Since(lastCacheRefresh) > cacheDuration {
-		iconCache.RUnlock()
-		if err := refreshIconCache(); err != nil {
-			return "", err
-		}
-		iconCache.RLock()
-	}
 	cachedIcon, ok := iconCache.data[url]
 	iconCache.RUnlock()
 	if ok {
 		return cachedIcon, nil
 	}
 
-	return "", fmt.Errorf("icon not found in cache")
-}
-
-func refreshIconCache() error {
-	log.Println("Refreshing icon cache")
-	// In a real application, you would fetch the URLs from a reliable source.
-	// For this example, we'll assume a static list of known icon URLs.
-	knownIconURLs := []string{
-		"https://www.swindon.gov.uk/recycling_icon.png",
-		"https://www.swindon.gov.uk/rubbish_icon.png",
-	}
-
-	newCache := make(map[string]string)
-	for _, url := range knownIconURLs {
-		dataURI, err := convertImageToBase64URI(url)
-		if err != nil {
-			log.Printf("Failed to fetch and convert icon %s: %v", url, err)
-			continue
-		}
-		newCache[url] = dataURI
+	// If not in cache, fetch, convert, and cache it
+	iconDataURI, err := convertImageToBase64URI(url)
+	if err != nil {
+		return "", err
 	}
 
 	iconCache.Lock()
-	iconCache.data = newCache
-	lastCacheRefresh = time.Now()
+	iconCache.data[url] = iconDataURI
 	iconCache.Unlock()
-	log.Println("Icon cache refreshed")
-	return nil
+
+	return iconDataURI, nil
 }
 
 func parseRequestParams(r *http.Request) (*requestParams, error) {
@@ -175,7 +147,7 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 			if collections.Collections[i].IconURL != "" {
 				iconDataURI, err := getIcon(collections.Collections[i].IconURL)
 				if err != nil {
-					log.Printf("Failed to get icon %s from cache: %v", collections.Collections[i].IconURL, err)
+					log.Printf("Failed to get icon %s: %v", collections.Collections[i].IconURL, err)
 					continue
 				}
 				collections.Collections[i].IconDataURI = iconDataURI

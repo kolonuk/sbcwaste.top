@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -122,7 +121,7 @@ func TestOutputFormats(t *testing.T) {
 			return strings.Contains(body, "<type>Recycling</type>") && strings.Contains(body, "<CollectionDates>2024-01-08</CollectionDates>")
 		}},
 		{"yaml", "application/x-yaml", func(body string) bool {
-			return strings.Contains(body, "type: Recycling") && strings.Contains(body, "- 2024-01-01") && strings.Contains(body, "- 2024-01-08")
+			return strings.Contains(body, "type: Recycling") && strings.Contains(body, "- \"2024-01-01\"") && strings.Contains(body, "- \"2024-01-08\"")
 		}},
 		{"ics", "text/calendar", func(body string) bool {
 			return strings.Contains(body, "SUMMARY:Recycling") && strings.Contains(body, "DTSTART;VALUE=DATE:20240108")
@@ -163,21 +162,19 @@ func TestOutputFormats(t *testing.T) {
 	}
 }
 
-func TestIconCaching(t *testing.T) {
+func TestIconCachingDynamic(t *testing.T) {
 	// Mock the image conversion
 	originalConvert := convertImageToBase64URI
+	var convertCount int
 	convertImageToBase64URI = func(url string) (string, error) {
+		convertCount++
 		return "data:image/png;base64,mocked_base64_data", nil
 	}
 	defer func() { convertImageToBase64URI = originalConvert }()
 
-	// 1. Test initial cache population
-	err := refreshIconCache()
-	if err != nil {
-		t.Fatalf("Initial icon cache refresh failed: %v", err)
-	}
+	iconURL := "http://example.com/new_icon.png"
 
-	iconURL := "https://www.swindon.gov.uk/recycling_icon.png"
+	// 1. First call, should fetch and cache
 	cachedIcon, err := getIcon(iconURL)
 	if err != nil {
 		t.Fatalf("Failed to get icon from cache: %v", err)
@@ -185,30 +182,19 @@ func TestIconCaching(t *testing.T) {
 	if cachedIcon != "data:image/png;base64,mocked_base64_data" {
 		t.Errorf("Unexpected cached icon data: got %s", cachedIcon)
 	}
-
-	// 2. Test cache expiry and refresh
-	// Force the cache to be considered old
-	lastCacheRefresh = time.Now().Add(-2 * cacheDuration)
-	var refreshCount int
-	convertImageToBase64URI = func(url string) (string, error) {
-		refreshCount++
-		return "data:image/png;base64,refreshed_base64_data", nil
+	if convertCount != 1 {
+		t.Errorf("Expected convert function to be called once, but was called %d times", convertCount)
 	}
 
-	_, err = getIcon(iconURL)
+	// 2. Second call, should use cache
+	cachedIcon, err = getIcon(iconURL)
 	if err != nil {
-		t.Fatalf("Failed to get icon from cache after expiry: %v", err)
+		t.Fatalf("Failed to get icon from cache on second call: %v", err)
 	}
-
-	if refreshCount == 0 {
-		t.Error("Cache was not refreshed after expiry")
+	if cachedIcon != "data:image/png;base64,mocked_base64_data" {
+		t.Errorf("Unexpected cached icon data on second call: got %s", cachedIcon)
 	}
-
-	refreshedIcon, err := getIcon(iconURL)
-	if err != nil {
-		t.Fatalf("Failed to get icon from cache after refresh: %v", err)
-	}
-	if refreshedIcon != "data:image/png;base64,refreshed_base64_data" {
-		t.Errorf("Unexpected refreshed icon data: got %s", refreshedIcon)
+	if convertCount != 1 {
+		t.Errorf("Expected convert function to still be called only once, but was called %d times", convertCount)
 	}
 }
