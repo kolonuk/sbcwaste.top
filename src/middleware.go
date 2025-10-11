@@ -33,8 +33,8 @@ func getVisitor(ip string) *rate.Limiter {
 
 	v, exists := visitors[ip]
 	if !exists {
-		// Allow 3 requests per 10 seconds, with a burst of 3.
-		limiter := rate.NewLimiter(rate.Limit(0.3), 3)
+		// Allow 10 requests per minute, with a burst of 5.
+		limiter := rate.NewLimiter(rate.Every(time.Minute/10), 5)
 		visitors[ip] = &visitor{limiter, time.Now()}
 		return limiter
 	}
@@ -63,6 +63,12 @@ func cleanupVisitors() {
 // rateLimit is a middleware that limits requests per IP address.
 func rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Do not rate limit the main page, the help page, or static assets
+		if r.URL.Path == "/" || r.URL.Path == "/api/help" || strings.HasPrefix(r.URL.Path, "/static/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Get the IP address for the request.
 		// The `X-Forwarded-For` header is the standard for identifying the
 		// originating IP address of a client connecting through a proxy like
