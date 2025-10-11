@@ -14,10 +14,10 @@ COPY src/ .
 # Build the Go program with static link for smaller size and no libc dependencies
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
-# Use a distroless base image for security and a smaller footprint
+# Use a slim base image
 FROM debian:bookworm-slim
 
-# Install necessary dependencies for Chrome/Chromium
+# Install dependencies for Chrome and the application
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
@@ -33,9 +33,10 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 \
     lsb-release \
     wget \
-    xdg-utils \
-    chromium \
-    chromium-driver \
+    xdg-utils --no-install-recommends \
+    && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled Go program from the builder stage
