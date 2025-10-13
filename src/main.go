@@ -44,7 +44,10 @@ func main() {
 	// Create a new chromedp allocator
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(browserPath),
-		chromedp.Flag("no-sandbox", true), // Running as root requires this
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
 	)
 	var cancel context.CancelFunc
