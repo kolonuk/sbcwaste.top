@@ -230,6 +230,15 @@ func parseCollections(doc *goquery.Document) (*Collections, error) {
 }
 
 func WasteCollection(w http.ResponseWriter, r *http.Request) {
+	// Wait for the browser to be ready
+	<-browserReady
+
+	// Check if the browser was initialized successfully
+	if allocatorContext == nil {
+		http.Error(w, "Scraping features are disabled because a browser could not be found", http.StatusInternalServerError)
+		return
+	}
+
 	params, err := parseRequestParams(r)
 	if err != nil {
 		if err.Error() == "UPRN not provided" {

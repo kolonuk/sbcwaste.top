@@ -19,6 +19,8 @@ import (
 
 // Global variable to hold the allocator context
 var allocatorContext context.Context
+var browserCancel context.CancelFunc
+var browserReady = make(chan bool)
 
 // findChromium returns the path to the google-chrome executable, or an empty string if not found.
 func findChromium() string {
@@ -35,22 +37,37 @@ func findChromium() string {
 	return ""
 }
 
-func main() {
+func initializeBrowser() {
 	browserPath := findChromium()
 	if browserPath == "" {
-		log.Fatalf("No Chrome or Chromium browser found. Please install one.")
+		log.Println("No Chrome or Chromium browser found. Scraping features will be disabled.")
+		close(browserReady) // Signal that we are "ready" but there's no browser
+		return
 	}
 
 	// Create a new chromedp allocator
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(browserPath),
-		chromedp.Flag("no-sandbox", true), // Running as root requires this
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
 	)
+
 	var cancel context.CancelFunc
 	allocatorContext, cancel = chromedp.NewExecAllocator(context.Background(), opts...)
+	browserCancel = cancel
 
-	// Set up a channel to listen for OS signals
+	log.Println("Browser initialized successfully")
+	close(browserReady) // Signal that the browser is ready
+}
+
+func main() {
+	// Start browser initialization in the background
+	go initializeBrowser()
+
+	// Set up a channel to listen for OS signals for graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -58,7 +75,9 @@ func main() {
 	go func() {
 		<-stop
 		log.Println("Shutting down gracefully...")
-		cancel()
+		if browserCancel != nil {
+			browserCancel()
+		}
 		os.Exit(0)
 	}()
 
