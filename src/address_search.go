@@ -13,6 +13,15 @@ type AddressSearchResult struct {
 }
 
 func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
+	// Wait for the browser to be ready
+	<-browserReady
+
+	// Check if the browser was initialized successfully
+	if allocatorContext == nil {
+		http.Error(w, "Scraping features are disabled because a browser could not be found", http.StatusInternalServerError)
+		return
+	}
+
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		http.Error(w, "Query parameter 'q' is required", http.StatusBadRequest)
