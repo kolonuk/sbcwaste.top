@@ -85,18 +85,13 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register handlers for each route.
-	mux.Handle("/", http.HandlerFunc(serveIndex))
+	mux.Handle("/", http.HandlerFunc(rootHandler)) // Use the new root handler
 	mux.Handle("/static/", Gzip(cacheControlMiddleware(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))))
 	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
 	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
 	mux.Handle("/api/waste", http.HandlerFunc(WasteCollection))
-
-	// The default handler for waste collection lookups. This will catch any requests
-	// that don't match the other handlers, which is the desired behavior for
-	// the /<uprn>/<format> endpoint.
-	mux.Handle("/", http.HandlerFunc(WasteCollection))
 
 	// Chain the middleware. The request will pass through the rate limiter first,
 	// then the security headers handler, and finally to the router.
@@ -117,6 +112,14 @@ func main() {
 	log.Printf("Starting server on port %s", port)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
+	}
+}
+
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		serveIndex(w, r)
+	} else {
+		WasteCollection(w, r)
 	}
 }
 
