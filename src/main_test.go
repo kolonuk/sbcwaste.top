@@ -7,25 +7,6 @@ import (
 	"testing"
 )
 
-import (
-	"os"
-)
-
-func TestMain(m *testing.M) {
-	// Initialize a real browser for the tests
-	initializeBrowser()
-	// Wait for the browser to be ready before running tests
-	<-browserReady
-
-	// Run the tests
-	code := m.Run()
-
-	// Clean up
-	if browserCancel != nil {
-		browserCancel()
-	}
-	os.Exit(code)
-}
 
 func TestWasteCollection(t *testing.T) {
 	req, err := http.NewRequest("GET", "/", nil)

@@ -17,15 +17,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 # Use a slim base image
 FROM debian:bookworm-slim
 
-# Install Google Chrome and its dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends gnupg wget ca-certificates \
-    && mkdir -p /etc/apt/keyrings \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
-    && sh -c 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
 

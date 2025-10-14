@@ -2,71 +2,18 @@ package main
 
 import (
 	"compress/gzip"
-	"context"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
 	// _ "net/http/pprof"
-
-	"github.com/chromedp/chromedp"
 )
 
-// Global variable to hold the allocator context
-var allocatorContext context.Context
-var browserCancel context.CancelFunc
-var browserReady = make(chan bool)
-
-// findChromium returns the path to the google-chrome executable, or an empty string if not found.
-func findChromium() string {
-	for _, path := range []string{
-		"google-chrome",
-		"chromium-browser",
-		"chromium",
-	} {
-		if _, err := exec.LookPath(path); err == nil {
-			return path
-		}
-	}
-	// Return empty string if no browser is found
-	return ""
-}
-
-func initializeBrowser() {
-	browserPath := findChromium()
-	if browserPath == "" {
-		log.Println("No Chrome or Chromium browser found. Scraping features will be disabled.")
-		close(browserReady) // Signal that we are "ready" but there's no browser
-		return
-	}
-
-	// Create a new chromedp allocator
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(browserPath),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.UserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36`),
-	)
-
-	var cancel context.CancelFunc
-	allocatorContext, cancel = chromedp.NewExecAllocator(context.Background(), opts...)
-	browserCancel = cancel
-
-	log.Println("Browser initialized successfully")
-	close(browserReady) // Signal that the browser is ready
-}
-
 func main() {
-	// Start browser initialization in the background
-	go initializeBrowser()
-
 	// Set up a channel to listen for OS signals for graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -75,9 +22,6 @@ func main() {
 	go func() {
 		<-stop
 		log.Println("Shutting down gracefully...")
-		if browserCancel != nil {
-			browserCancel()
-		}
 		os.Exit(0)
 	}()
 
@@ -85,7 +29,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register handlers for each route.
-	mux.Handle("/", http.HandlerFunc(rootHandler)) // Use the new root handler
+	mux.Handle("/", http.HandlerFunc(rootHandler))
 	mux.Handle("/static/", Gzip(cacheControlMiddleware(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))))
 	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
@@ -114,6 +58,7 @@ func main() {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
 	}
 }
+
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
