@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/bigquery v1.71.0
 	cloud.google.com/go/firestore v1.19.0
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/chromedp/chromedp v0.9.5
 	github.com/mattn/go-sqlite3 v1.14.32
 	golang.org/x/time v0.14.0
 	google.golang.org/api v0.250.0
@@ -24,25 +23,17 @@ require (
 	cloud.google.com/go/longrunning v0.6.7 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
-	github.com/chromedp/cdproto v0.0.0-20240202021202-6d0b6a386732 // indirect
-	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.3.2 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
-	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/orisano/pixelmatch v0.0.0-20230914042517-fa304d1dc785 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
