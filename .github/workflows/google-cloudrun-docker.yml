@@ -206,6 +206,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Clean up old images
+        continue-on-error: true
         run: |
           echo "Identifying images to clean up in ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}"
 
@@ -218,12 +219,24 @@ jobs:
           echo "Prod: ${prod_image:-'not found'}"
           echo "Dev: ${dev_image:-'not found'}"
 
-          # Get all image versions, sorted from newest to oldest
-          all_images=$(gcloud artifacts docker images list ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }} --sort-by=~CREATE_TIME --format="get(version)")
+          # Get all image versions, sorted from newest to oldest.
+          all_images_output=$(gcloud artifacts docker images list ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }} --sort-by=~CREATE_TIME --format="get(version)" 2>/dev/null) || all_images_output=""
 
-          # The output from the command above is the full image path including the digest.
-          # We need to filter this list to only include images for the current service.
-          all_images=$(echo "$all_images" | grep "/${{ env.IMAGE }}@")
+          # If there are no images in the repo, we can exit successfully.
+          if [ -z "$all_images_output" ]; then
+            echo "No images found in repository. Nothing to do."
+            exit 0
+          fi
+
+          # Filter for images of the current service. If grep finds nothing, it exits with 1,
+          # so we add `|| true` to prevent the script from exiting.
+          all_images=$(echo "$all_images_output" | grep "/${{ env.IMAGE }}@" || true)
+
+          # If there are no images for this service, we can exit successfully.
+          if [ -z "$all_images" ]; then
+            echo "No images found for this service. Nothing to do."
+            exit 0
+          fi
 
           # Build a unique list of images to keep
           images_to_keep_list=()
@@ -240,7 +253,8 @@ jobs:
           echo "$unique_keep_list"
 
           # Use `grep` to find images that are in all_images but not in unique_keep_list.
-          delete_list=$(echo "$all_images" | grep -vFx -f <(echo "$unique_keep_list"))
+          # If grep finds no images to delete, it exits with 1, so we add `|| true`.
+          delete_list=$(echo "$all_images" | grep -vFx -f <(echo "$unique_keep_list") || true)
 
           # Delete the images if the delete list is not empty
           if [ -n "$delete_list" ]; then
