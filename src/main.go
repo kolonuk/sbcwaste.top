@@ -29,17 +29,19 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register handlers for each route.
-	mux.Handle("/", http.HandlerFunc(rootHandler))
-	mux.Handle("/static/", Gzip(cacheControlMiddleware(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))))
 	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
 	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
 	mux.Handle("/api/waste", http.HandlerFunc(WasteCollection))
 
+	// Add the new file server handler.
+	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("static"))))
+	mux.Handle("/", securityHeadersMiddleware(rootHandler(fileServer)))
+
 	// Chain the middleware. The request will pass through the rate limiter first,
 	// then the security headers handler, and finally to the router.
-	handler := rateLimit(securityHeadersMiddleware(mux))
+	handler := rateLimit(mux)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -60,21 +62,18 @@ func main() {
 }
 
 
-func rootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		serveIndex(w, r)
-	} else {
+func rootHandler(fileServer http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Serve static files if they exist
+		_, err := os.Stat("static" + r.URL.Path)
+		if r.URL.Path == "/" || (r.URL.Path != "/" && !os.IsNotExist(err)) {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Otherwise, handle as a waste collection request
 		WasteCollection(w, r)
 	}
-}
-
-func serveIndex(w http.ResponseWriter, r *http.Request) {
-	// Only set cache headers for static content in non-development environments.
-	if os.Getenv("APP_ENV") != "development" {
-		// Cache for 1 hour.
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-	}
-	http.ServeFile(w, r, "static/index.html")
 }
 
 func serveSecurityTxt(w http.ResponseWriter, r *http.Request) {
