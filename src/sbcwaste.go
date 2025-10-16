@@ -90,8 +90,8 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 		return nil, errors.New("UPRN not provided")
 	}
 
-	// Validate that the UPRN is a numeric value
-	if matched, _ := regexp.MatchString("^[0-9]+$", params.uprn); !matched {
+	// Validate that the UPRN is a numeric value with a reasonable length
+	if matched, _ := regexp.MatchString("^[0-9]{1,20}$", params.uprn); !matched {
 		return nil, errors.New("invalid UPRN format")
 	}
 
