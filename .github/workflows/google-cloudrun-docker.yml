@@ -51,6 +51,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -98,6 +101,35 @@ jobs:
       - name: Push Docker image
         if: github.event_name == 'push'
         run: docker push ${{ steps.build-image.outputs.image_name }}
+
+      - name: Check for vulnerabilities in Artifact Registry
+        if: github.event_name == 'push'
+        run: |
+          echo "Waiting for vulnerability scan to complete..."
+          for i in {1..10}; do
+            # The vulnerability scan can take a few minutes to complete.
+            # We poll the status until it is finished.
+            vuln_scan_status=$(gcloud artifacts docker images describe ${{ steps.build-image.outputs.image_name }} --format='value(discovery_summary.discovery.analysis_status)')
+            if [ "$vuln_scan_status" == "FINISHED_SUCCESS" ]; then
+              echo "Vulnerability scan completed."
+              break
+            fi
+            echo "Attempt $i: Scan not yet complete. Waiting 30 seconds..."
+            sleep 30
+          done
+
+          if [ "$vuln_scan_status" != "FINISHED_SUCCESS" ]; then
+            echo "Vulnerability scan did not complete in time."
+            exit 1
+          fi
+
+          # Check for high or critical severity vulnerabilities.
+          # The command will exit with a non-zero status code if vulnerabilities are found.
+          gcloud artifacts docker images scan ${{ steps.build-image.outputs.image_name }} \
+            --severity=HIGH,CRITICAL \
+            --format=json | jq -e '.[] | select(.vulnerability.cvssScore > 0)' && \
+            echo "No HIGH or CRITICAL vulnerabilities found." || \
+            (echo "CRITICAL or HIGH severity vulnerabilities found. Failing build." && exit 1)
 
   deploy:
     name: Deploy to Cloud Run
