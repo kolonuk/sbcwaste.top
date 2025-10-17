@@ -90,13 +90,13 @@ jobs:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-      - name: Display authenticated user
-        if: github.event_name == 'push'
-        run: gcloud auth list
-
       - name: Set up Cloud SDK
         if: github.event_name == 'push'
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Display authenticated user
+        if: github.event_name == 'push'
+        run: gcloud auth list
 
       - name: Enable Google Cloud services
         if: github.event_name == 'push'
