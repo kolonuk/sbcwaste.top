@@ -90,15 +90,19 @@ jobs:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
+      - name: Set up Cloud SDK
+        if: github.event_name == 'push'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Display authenticated user
+        if: github.event_name == 'push'
+        run: gcloud auth list
+
       - name: Display authenticated user
         if: github.event_name == 'push'
         run: |
           ACCOUNT=$(gcloud config get-value account)
           echo "Authenticated user: ${ACCOUNT//@/ [at] }"
-
-      - name: Set up Cloud SDK
-        if: github.event_name == 'push'
-        uses: google-github-actions/setup-gcloud@v2
 
       - name: Enable Google Cloud services
         if: github.event_name == 'push'
