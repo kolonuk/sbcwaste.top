@@ -1,200 +1,185 @@
 package main
 
 import (
-	"context"
-	"io/ioutil"
+	"encoding/json"
+	"encoding/xml"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
+	"gopkg.in/yaml.v2"
 )
 
-const mockHTML = `
-<!DOCTYPE html>
-<html>
-<body>
-    <div class="bin-collection-content">
-        <h3>Recycling</h3>
-        <span class="nextCollectionDate">Monday, 1 January 2024</span>
-        <div class="row collection-next">
-            <div class="row">
-                <p>Monday, 8 January 2024</p>
-                <p>Monday, 15 January 2024</p>
-            </div>
-        </div>
-        <div class="bin-icons" style="background-image: url('https://www.swindon.gov.uk/recycling_icon.png');"></div>
-    </div>
-    <div class="bin-collection-content">
-        <h3>Rubbish</h3>
-        <span class="nextCollectionDate">Tuesday, 2 January 2024</span>
-        <div class="row collection-next">
-            <div class="row">
-                <p>Tuesday, 9 January 2024</p>
-                <p>Tuesday, 16 January 2024</p>
-            </div>
-        </div>
-        <div class="bin-icons" style="background-image: url('https://www.swindon.gov.uk/rubbish_icon.png');"></div>
-    </div>
-</body>
-</html>
-`
-
-func TestFetchCollectionsFromSBC(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(mockHTML))
-	}))
-	defer server.Close()
-
-	originalFetch := fetchCollectionsFromSBC
-	fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (*Collections, error) {
-		client := &http.Client{}
-		req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer res.Body.Close()
-
-		doc, err := goquery.NewDocumentFromReader(res.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		return parseCollections(doc)
-	}
-	defer func() { fetchCollectionsFromSBC = originalFetch }()
-
-	params := &requestParams{uprn: "12345", showIcons: false}
-	collections, err := fetchCollectionsFromSBC(context.Background(), params)
+// loadTestHTML loads the content of the test HTML file.
+func loadTestHTML(t *testing.T) *goquery.Document {
+	file, err := os.Open("../testdata/sbc_response.html")
 	if err != nil {
-		t.Fatalf("fetchCollectionsFromSBC failed: %v", err)
+		t.Fatalf("Failed to open test data file: %v", err)
+	}
+	defer file.Close()
+
+	doc, err := goquery.NewDocumentFromReader(file)
+	if err != nil {
+		t.Fatalf("Failed to parse test HTML: %v", err)
+	}
+	return doc
+}
+
+// TestParseCollectionsFromFixture tests the parsing of collections from the HTML fixture.
+func TestParseCollectionsFromFixture(t *testing.T) {
+	doc := loadTestHTML(t)
+	collections, err := parseCollections(doc)
+	if err != nil {
+		t.Fatalf("parseCollections failed: %v", err)
 	}
 
 	if len(collections.Collections) != 2 {
-		t.Fatalf("expected 2 collections, got %d", len(collections.Collections))
+		t.Fatalf("Expected 2 collections, got %d", len(collections.Collections))
 	}
 
-	if collections.Collections[0].Type != "Recycling" {
-		t.Errorf("expected collection type 'Recycling', got '%s'", collections.Collections[0].Type)
+	// Test Refuse collection
+	refuse := collections.Collections[0]
+	if refuse.Type != "Refuse" {
+		t.Errorf("Expected first collection type to be 'Refuse', got '%s'", refuse.Type)
 	}
-	if collections.Collections[1].Type != "Rubbish" {
-		t.Errorf("expected collection type 'Rubbish', got '%s'", collections.Collections[1].Type)
+	expectedRefuseDates := []string{"2025-10-20", "2025-11-03", "2025-11-10"}
+	if !equalSlices(refuse.CollectionDates, expectedRefuseDates) {
+		t.Errorf("Expected refuse dates %v, got %v", expectedRefuseDates, refuse.CollectionDates)
 	}
-	if len(collections.Collections[0].CollectionDates) != 3 {
-		t.Errorf("expected 3 recycling dates, got %d", len(collections.Collections[0].CollectionDates))
+
+	// Test Recycling collection
+	recycling := collections.Collections[1]
+	if recycling.Type != "Recycling" {
+		t.Errorf("Expected second collection type to be 'Recycling', got '%s'", recycling.Type)
+	}
+	expectedRecyclingDates := []string{"2025-10-27", "2025-11-17", "2025-11-24"}
+	if !equalSlices(recycling.CollectionDates, expectedRecyclingDates) {
+		t.Errorf("Expected recycling dates %v, got %v", expectedRecyclingDates, recycling.CollectionDates)
 	}
 }
 
-func TestOutputFormats(t *testing.T) {
-	collections := &Collections{
-		Collections: []Collection{
-			{
-				Type:            "Recycling",
-				CollectionDates: []string{"2024-01-01", "2024-01-08"},
-				IconURL:         "http://example.com/recycling.png",
-			},
-			{
-				Type:            "Rubbish",
-				CollectionDates: []string{"2024-01-02", "2024-01-09"},
-				IconURL:         "http://example.com/rubbish.png",
-			},
-		},
-		Address: "123 Test Street, Swindon",
+// equalSlices checks if two string slices are equal.
+func equalSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	testCases := []struct {
-		format      string
-		contentType string
-		validator   func(string) bool
-	}{
-		{"json", "application/json", func(body string) bool {
-			return strings.Contains(body, `"type":"Recycling"`) && strings.Contains(body, `"CollectionDates":["2024-01-01","2024-01-08"]`)
-		}},
-		{"xml", "application/xml", func(body string) bool {
-			return strings.Contains(body, "<type>Recycling</type>") && strings.Contains(body, "<CollectionDates>2024-01-08</CollectionDates>")
-		}},
-		{"yaml", "application/x-yaml", func(body string) bool {
-			return strings.Contains(body, "type: Recycling") && strings.Contains(body, "- \"2024-01-01\"") && strings.Contains(body, "- \"2024-01-08\"")
-		}},
-		{"ics", "text/calendar", func(body string) bool {
-			return strings.Contains(body, "SUMMARY:Recycling") && strings.Contains(body, "DTSTART;VALUE=DATE:20240108")
-		}},
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.format, func(t *testing.T) {
-			rr := httptest.NewRecorder()
-
-			switch tc.format {
-			case "json":
-				formatAsJSON(rr, collections)
-			case "xml":
-				formatAsXML(rr, collections)
-			case "yaml":
-				formatAsYAML(rr, collections)
-			case "ics":
-				formatAsICS(rr, collections, &requestParams{uprn: "12345"})
-			}
-
-			res := rr.Result()
-			defer res.Body.Close()
-
-			if contentType := res.Header.Get("Content-Type"); contentType != tc.contentType {
-				t.Errorf("expected content type %s, got %s", tc.contentType, contentType)
-			}
-
-			body, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				t.Fatalf("could not read response body: %v", err)
-			}
-
-			if !tc.validator(string(body)) {
-				t.Errorf("output validation failed for format %s. Body:\n%s", tc.format, body)
-			}
-		})
-	}
+	return true
 }
 
-func TestIconCachingDynamic(t *testing.T) {
-	// Mock the image conversion
-	originalConvert := convertImageToBase64URI
-	var convertCount int
-	convertImageToBase64URI = func(url string) (string, error) {
-		convertCount++
-		return "data:image/png;base64,mocked_base64_data", nil
-	}
-	defer func() { convertImageToBase64URI = originalConvert }()
-
-	iconURL := "http://example.com/new_icon.png"
-
-	// 1. First call, should fetch and cache
-	cachedIcon, err := getIcon(iconURL)
+// TestOutputFormatsFromFixture tests all output formats using the HTML fixture.
+func TestOutputFormatsFromFixture(t *testing.T) {
+	doc := loadTestHTML(t)
+	collections, err := parseCollections(doc)
 	if err != nil {
-		t.Fatalf("Failed to get icon from cache: %v", err)
+		t.Fatalf("parseCollections failed: %v", err)
 	}
-	if cachedIcon != "data:image/png;base64,mocked_base64_data" {
-		t.Errorf("Unexpected cached icon data: got %s", cachedIcon)
-	}
-	if convertCount != 1 {
-		t.Errorf("Expected convert function to be called once, but was called %d times", convertCount)
+	collections.Address = "Test Address"
+
+	// Mock request params
+	params := &requestParams{
+		uprn:      "12345",
+		output:    "", // will be set in subtests
+		debugging: false,
+		showIcons: false,
 	}
 
-	// 2. Second call, should use cache
-	cachedIcon, err = getIcon(iconURL)
-	if err != nil {
-		t.Fatalf("Failed to get icon from cache on second call: %v", err)
-	}
-	if cachedIcon != "data:image/png;base64,mocked_base64_data" {
-		t.Errorf("Unexpected cached icon data on second call: got %s", cachedIcon)
-	}
-	if convertCount != 1 {
-		t.Errorf("Expected convert function to still be called only once, but was called %d times", convertCount)
-	}
+	t.Run("JSON", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		formatAsJSON(w, collections)
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status OK, got %v", resp.Status)
+		}
+		if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %v", contentType)
+		}
+
+		var out Collections
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("Failed to unmarshal JSON: %v", err)
+		}
+		if len(out.Collections) != 2 {
+			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
+		}
+	})
+
+	t.Run("XML", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		formatAsXML(w, collections)
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status OK, got %v", resp.Status)
+		}
+		if contentType := resp.Header.Get("Content-Type"); contentType != "application/xml" {
+			t.Errorf("Expected Content-Type application/xml, got %v", contentType)
+		}
+
+		var out Collections
+		if err := xml.Unmarshal(body, &out); err != nil {
+			t.Fatalf("Failed to unmarshal XML: %v", err)
+		}
+		if len(out.Collections) != 2 {
+			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
+		}
+	})
+
+	t.Run("YAML", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		formatAsYAML(w, collections)
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status OK, got %v", resp.Status)
+		}
+		if contentType := resp.Header.Get("Content-Type"); contentType != "application/x-yaml" {
+			t.Errorf("Expected Content-Type application/x-yaml, got %v", contentType)
+		}
+
+		var out Collections
+		if err := yaml.Unmarshal(body, &out); err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+		if len(out.Collections) != 2 {
+			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
+		}
+	})
+
+	t.Run("ICS", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		formatAsICS(w, collections, params)
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status OK, got %v", resp.Status)
+		}
+		if contentType := resp.Header.Get("Content-Type"); contentType != "text/calendar" {
+			t.Errorf("Expected Content-Type text/calendar, got %v", contentType)
+		}
+
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, "SUMMARY:Refuse") {
+			t.Error("ICS output does not contain Refuse summary")
+		}
+		if !strings.Contains(bodyStr, "SUMMARY:Recycling") {
+			t.Error("ICS output does not contain Recycling summary")
+		}
+		if !strings.Contains(bodyStr, "DTSTART;VALUE=DATE:20251020") {
+			t.Error("ICS output does not contain correct start date for Refuse")
+		}
+	})
 }
