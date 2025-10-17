@@ -92,7 +92,9 @@ jobs:
 
       - name: Display authenticated user
         if: github.event_name == 'push'
-        run: gcloud auth list
+        run: |
+          ACCOUNT=$(gcloud config get-value account)
+          echo "Authenticated user: ${ACCOUNT//@/ [at] }"
 
       - name: Set up Cloud SDK
         if: github.event_name == 'push'
