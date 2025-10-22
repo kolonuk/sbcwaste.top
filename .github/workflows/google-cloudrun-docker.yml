@@ -94,26 +94,6 @@ jobs:
         if: github.event_name == 'push'
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Display authenticated user
-        if: github.event_name == 'push'
-        run: gcloud auth list
-
-      - name: Display authenticated user
-        if: github.event_name == 'push'
-        run: |
-          ACCOUNT=$(gcloud config get-value account)
-          echo "Authenticated user: ${ACCOUNT//@/ [at] }"
-
-      - name: Enable Google Cloud services
-        if: github.event_name == 'push'
-        run: |
-          gcloud services enable artifactregistry.googleapis.com
-          gcloud services enable artifactanalysis.googleapis.com
-          gcloud artifacts repositories set-scanning-config ${{ env.REPO }} \
-            --location=${{ env.GAR_LOCATION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --no-dry-run
-
       - name: Configure Docker
         if: github.event_name == 'push'
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
@@ -125,28 +105,39 @@ jobs:
       - name: Check for vulnerabilities in Artifact Registry
         if: github.event_name == 'push'
         run: |
-          # The image name is in the format: europe-west1-docker.pkg.dev/sbcwaste/eu-docker-repo/sbcwaste@sha256:digest
-          # We need to extract the digest to form the console URL.
-          IMAGE_DIGEST=$(echo "${{ steps.build-image.outputs.image_name }}" | cut -d'@' -f2)
-          CONSOLE_URL="https://console.cloud.google.com/artifacts/images/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }};version=${IMAGE_DIGEST}?project=${{ env.PROJECT_ID }}"
+          # The image name with the tag is what we have from the build step
+          IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
+
+          # We need the digest for the URL. We can get this from gcloud describe.
+          # The `version` field holds the digest, e.g. sha256:digest
+          IMAGE_DIGEST_FULL=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='get(version)')
+
+          # Construct the correct URL to the vulnerabilities tab
+          CONSOLE_URL="https://console.cloud.google.com/artifacts/docker/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }}/${IMAGE_DIGEST_FULL};tab=vulnerabilities?project=${{ env.PROJECT_ID }}"
 
           echo "Vulnerability scan running. View results at: ${CONSOLE_URL}"
           echo "Waiting for scan to complete..."
 
           vuln_scan_status="PENDING"
           for i in {1..10}; do
-            # The vulnerability scan can take a few minutes to complete.
             # We poll the status until it is finished.
-            vuln_scan_status=$(gcloud artifacts docker images describe ${{ steps.build-image.outputs.image_name }} --format='value(discovery_summary.discovery.analysis_status)')
-            if [ "$vuln_scan_status" == "FINISHED_SUCCESS" ]; then
+            vuln_scan_status=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='value(discovery_summary.discovery.analysis_status)')
+
+            if [ -z "$vuln_scan_status" ]; then
+              echo "Attempt $i: Scan has not started yet. Waiting 30 seconds..."
+            elif [ "$vuln_scan_status" == "SCANNING" ]; then
+              echo "Attempt $i: Scan is in progress. Waiting 30 seconds..."
+            elif [ "$vuln_scan_status" == "FINISHED_SUCCESS" ]; then
               echo "Vulnerability scan completed successfully."
               break
             elif [ "$vuln_scan_status" == "FINISHED_FAILED" ] || [ "$vuln_scan_status" == "FINISHED_UNSUPPORTED" ]; then
               echo "Vulnerability scan finished with status: ${vuln_scan_status}"
               echo "View details at: ${CONSOLE_URL}"
               exit 1
+            else
+              # Handle other statuses like PENDING
+              echo "Attempt $i: Scan status is '${vuln_scan_status}'. Waiting 30 seconds..."
             fi
-            echo "Attempt $i: Scan status is '${vuln_scan_status}'. Waiting 30 seconds..."
             sleep 30
           done
 
@@ -162,8 +153,8 @@ jobs:
           # We will query for any vulnerability with a HIGH or CRITICAL severity.
           # The --format="value(vulnerability_summary.counts[?severity='CRITICAL' || severity='HIGH'].count)" command
           # will return the counts of high and critical vulnerabilities. If the sum is greater than 0, we fail.
-          critical_count=$(gcloud artifacts docker images describe ${{ steps.build-image.outputs.image_name }} --format="value(vulnerability_summary.counts[?severity='CRITICAL'].count)" | awk '{s+=$1} END {print s}')
-          high_count=$(gcloud artifacts docker images describe ${{ steps.build-image.outputs.image_name }} --format="value(vulnerability_summary.counts[?severity='HIGH'].count)" | awk '{s+=$1} END {print s}')
+          critical_count=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format="value(vulnerability_summary.counts[?severity='CRITICAL'].count)" | awk '{s+=$1} END {print s}')
+          high_count=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format="value(vulnerability_summary.counts[?severity='HIGH'].count)" | awk '{s+=$1} END {print s}')
 
           total_vulns=$((critical_count + high_count))
 
