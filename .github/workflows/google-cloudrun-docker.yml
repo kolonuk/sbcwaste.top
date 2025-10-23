@@ -105,47 +105,45 @@ jobs:
       - name: Check for vulnerabilities in Artifact Registry
         if: github.event_name == 'push'
         run: |
-          # The image name with the tag is what we have from the build step
           IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
-
-          # We need the digest for the URL. We can get this from gcloud describe.
-          # The `version` field holds the digest, e.g. sha256:digest
           IMAGE_DIGEST_FULL=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='get(version)')
-
-          # Construct the correct URL to the vulnerabilities tab
           CONSOLE_URL="https://console.cloud.google.com/artifacts/docker/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }}/${IMAGE_DIGEST_FULL};tab=vulnerabilities?project=${{ env.PROJECT_ID }}"
 
           echo "Vulnerability scan running. View results at: ${CONSOLE_URL}"
-          echo "Waiting for scan to complete..."
+          echo "Waiting for scan to start..."
 
-          vuln_scan_status="PENDING"
-          for i in {1..10}; do
-            # We poll the status until it is finished.
-            vuln_scan_status=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='value(discovery_summary.discovery.analysis_status)')
+          last_status=""
+          for i in {1..30}; do
+            current_status=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='value(discovery_summary.discovery.analysis_status)')
 
-            if [ -z "$vuln_scan_status" ]; then
-              echo "Attempt $i: Scan has not started yet. Waiting 30 seconds..."
-            elif [ "$vuln_scan_status" == "SCANNING" ]; then
-              echo "Attempt $i: Scan is in progress. Waiting 30 seconds..."
-            elif [ "$vuln_scan_status" == "FINISHED_SUCCESS" ]; then
-              echo "Vulnerability scan completed successfully."
+            if [ "$current_status" != "$last_status" ]; then
+              echo "" # Newline for better formatting
+              echo "Scan status changed to: ${current_status:-'NOT_STARTED'}"
+              last_status=$current_status
+            else
+              echo -n "."
+            fi
+
+            if [ "$current_status" == "FINISHED_SUCCESS" ]; then
+              echo -e "\n---"
+              echo "✅ Vulnerability scan completed successfully."
               break
-            elif [ "$vuln_scan_status" == "FINISHED_FAILED" ] || [ "$vuln_scan_status" == "FINISHED_UNSUPPORTED" ]; then
-              echo "Vulnerability scan finished with status: ${vuln_scan_status}"
+            elif [ "$current_status" == "FINISHED_FAILED" ] || [ "$current_status" == "FINISHED_UNSUPPORTED" ]; then
+              echo -e "\n---"
+              echo "❌ Vulnerability scan finished with status: ${current_status}"
               echo "View details at: ${CONSOLE_URL}"
               exit 1
-            else
-              # Handle other statuses like PENDING
-              echo "Attempt $i: Scan status is '${vuln_scan_status}'. Waiting 30 seconds..."
             fi
+
+            if [ $i -eq 30 ]; then
+              echo -e "\n---"
+              echo "❌ Vulnerability scan did not complete in time. Final status: '${current_status:-'NOT_STARTED'}'"
+              echo "View details at: ${CONSOLE_URL}"
+              exit 1
+            fi
+
             sleep 30
           done
-
-          if [ "$vuln_scan_status" != "FINISHED_SUCCESS" ]; then
-            echo "Vulnerability scan did not complete in time. Final status: '${vuln_scan_status}'"
-            echo "View details at: ${CONSOLE_URL}"
-            exit 1
-          fi
 
           # Check for high or critical severity vulnerabilities.
           # The `gcloud ... scan` command has been deprecated in favor of `gcloud artifacts vulnerability-scanning ...`
