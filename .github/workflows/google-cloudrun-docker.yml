@@ -112,22 +112,35 @@ jobs:
           echo "Vulnerability scan running. View results at: ${CONSOLE_URL}"
           echo "Waiting for scan to start..."
 
-          last_status=""
+          # Initialize with a custom status to handle the initial blank response gracefully.
+          last_status="NOT_STARTED"
+          echo "Initial status: $last_status"
+
           for i in {1..30}; do
+            # Get the current status from gcloud.
             current_status=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='value(discovery_summary.discovery.analysis_status)')
 
+            # If the status is blank (scan hasn't registered yet), treat it as our initial custom status.
+            if [ -z "$current_status" ]; then
+              current_status="NOT_STARTED"
+            fi
+
+            # Only print a full update when the status has actually changed.
             if [ "$current_status" != "$last_status" ]; then
-              echo "" # Newline for better formatting
-              echo "Scan status changed to: ${current_status:-'NOT_STARTED'}"
+              echo "" # Add a newline for cleaner formatting.
+              echo "Scan status changed to: $current_status"
               last_status=$current_status
             else
+              # Otherwise, just print a dot to show we're still waiting.
               echo -n "."
             fi
 
+            # Check for terminal success state.
             if [ "$current_status" == "FINISHED_SUCCESS" ]; then
               echo -e "\n---"
               echo "✅ Vulnerability scan completed successfully."
               break
+            # Check for terminal failure states.
             elif [ "$current_status" == "FINISHED_FAILED" ] || [ "$current_status" == "FINISHED_UNSUPPORTED" ]; then
               echo -e "\n---"
               echo "❌ Vulnerability scan finished with status: ${current_status}"
@@ -135,14 +148,12 @@ jobs:
               exit 1
             fi
 
+            # Check if we've hit the timeout.
             if [ $i -eq 30 ]; then
               echo -e "\n---"
-              echo "❌ Vulnerability scan did not complete in time. Final status: '${current_status:-'NOT_STARTED'}'"
+              echo "❌ Vulnerability scan did not complete in time. Final status: '${current_status}'"
               echo "View details at: ${CONSOLE_URL}"
               exit 1
-            else
-              # Handle other statuses like PENDING
-              echo "Attempt $i: Scan status is '${vuln_scan_status}'. Waiting 30 seconds..."
             fi
 
             sleep 30
