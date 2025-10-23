@@ -140,6 +140,9 @@ jobs:
               echo "❌ Vulnerability scan did not complete in time. Final status: '${current_status:-'NOT_STARTED'}'"
               echo "View details at: ${CONSOLE_URL}"
               exit 1
+            else
+              # Handle other statuses like PENDING
+              echo "Attempt $i: Scan status is '${vuln_scan_status}'. Waiting 30 seconds..."
             fi
 
             sleep 30
