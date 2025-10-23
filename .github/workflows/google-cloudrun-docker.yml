@@ -110,7 +110,7 @@ jobs:
           CONSOLE_URL="https://console.cloud.google.com/artifacts/docker/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }}/${IMAGE_DIGEST_FULL};tab=vulnerabilities?project=${{ env.PROJECT_ID }}"
 
           echo "Vulnerability scan running. View results at: ${CONSOLE_URL}"
-          echo "Waiting for scan to complete..."
+          echo "Waiting for scan to start..."
 
           # Initialize with a custom status to handle the initial blank response gracefully.
           last_status="NOT_STARTED"
