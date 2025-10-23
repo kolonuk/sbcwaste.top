@@ -106,56 +106,38 @@ jobs:
         if: github.event_name == 'push'
         run: |
           IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
+          # The resource_url for the occurrence filter needs the digest, not the tag.
+          IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
           IMAGE_DIGEST_FULL=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='get(version)')
+          RESOURCE_URL="https://${IMAGE_URL_NO_TAG}@${IMAGE_DIGEST_FULL}"
           CONSOLE_URL="https://console.cloud.google.com/artifacts/docker/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }}/${IMAGE_DIGEST_FULL};tab=vulnerabilities?project=${{ env.PROJECT_ID }}"
 
-          echo "Vulnerability scan running. View results at: ${CONSOLE_URL}"
-          echo "Waiting for scan to start..."
-
-          # Initialize with a custom status to handle the initial blank response gracefully.
-          last_status="NOT_STARTED"
-          echo "Initial status: $last_status"
+          echo "Waiting for vulnerability scan results..."
+          echo "View progress at: ${CONSOLE_URL}"
 
           for i in {1..30}; do
-            # Get the current status from gcloud.
-            current_status=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format='value(discovery_summary.discovery.analysis_status)')
+            # Instead of checking a status, we check for the existence of the vulnerability occurrence.
+            # The command will return a non-empty string once the scan is complete and the occurrence is created.
+            vuln_occurrence=$(gcloud artifacts docker images list ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }} \
+              --filter="package=${IMAGE_URL_NO_TAG}" \
+              --show-occurrences \
+              --occurrence-filter="kind=\"VULNERABILITY\" AND resource_url=\"${RESOURCE_URL}\"" \
+              --format="get(occurrences[0].vulnerability.severity)")
 
-            # If the status is blank (scan hasn't registered yet), treat it as our initial custom status.
-            if [ -z "$current_status" ]; then
-              current_status="NOT_STARTED"
-            fi
-
-            # Only print a full update when the status has actually changed.
-            if [ "$current_status" != "$last_status" ]; then
-              echo "" # Add a newline for cleaner formatting.
-              echo "Scan status changed to: $current_status"
-              last_status=$current_status
+            if [ -n "$vuln_occurrence" ]; then
+              echo -e "\n---"
+              echo "✅ Vulnerability scan results are available."
+              break
             else
-              # Otherwise, just print a dot to show we're still waiting.
               echo -n "."
             fi
 
-            # Check for terminal success state.
-            if [ "$current_status" == "FINISHED_SUCCESS" ]; then
-              echo -e "\n---"
-              echo "✅ Vulnerability scan completed successfully."
-              break
-            # Check for terminal failure states.
-            elif [ "$current_status" == "FINISHED_FAILED" ] || [ "$current_status" == "FINISHED_UNSUPPORTED" ]; then
-              echo -e "\n---"
-              echo "❌ Vulnerability scan finished with status: ${current_status}"
-              echo "View details at: ${CONSOLE_URL}"
-              exit 1
-            fi
-
-            # Check if we've hit the timeout.
             if [ $i -eq 30 ]; then
               echo -e "\n---"
-              echo "❌ Vulnerability scan did not complete in time. Final status: '${current_status}'"
-              echo "View details at: ${CONSOLE_URL}"
+              echo "❌ Timed out waiting for vulnerability scan results."
+              echo "Please check the status manually at: ${CONSOLE_URL}"
               exit 1
             fi
-
             sleep 30
           done
 
