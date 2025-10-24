@@ -116,10 +116,10 @@ jobs:
           echo "View progress at: ${CONSOLE_URL}"
 
           for i in {1..30}; do
-            # Instead of checking a status, we check for the existence of the vulnerability occurrence.
-            # The command will return a non-empty string once the scan is complete and the occurrence is created.
+            # We check for the existence of the vulnerability occurrence. The command will return a non-empty string
+            # once the scan is complete and the occurrence is created.
             vuln_occurrence=$(gcloud artifacts docker images list ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }} \
-              --filter="package=${IMAGE_URL_NO_TAG}" \
+              --filter="package='${IMAGE_URL_NO_TAG}'" \
               --show-occurrences \
               --occurrence-filter="kind=\"VULNERABILITY\" AND resource_url=\"${RESOURCE_URL}\"" \
               --format="get(occurrences[0].vulnerability.severity)")
@@ -141,23 +141,19 @@ jobs:
             sleep 30
           done
 
-          # Check for high or critical severity vulnerabilities.
-          # The `gcloud ... scan` command has been deprecated in favor of `gcloud artifacts vulnerability-scanning ...`
-          # However, for simplicity and to avoid parsing large JSON, we'll check the discovery summary.
-          # We will query for any vulnerability with a HIGH or CRITICAL severity.
-          # The --format="value(vulnerability_summary.counts[?severity='CRITICAL' || severity='HIGH'].count)" command
-          # will return the counts of high and critical vulnerabilities. If the sum is greater than 0, we fail.
+          # Now that the scan is complete, check the summary for critical or high vulnerabilities.
           critical_count=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format="value(vulnerability_summary.counts[?severity='CRITICAL'].count)" | awk '{s+=$1} END {print s}')
           high_count=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --format="value(vulnerability_summary.counts[?severity='HIGH'].count)" | awk '{s+=$1} END {print s}')
-
           total_vulns=$((critical_count + high_count))
 
           if [ "$total_vulns" -gt 0 ]; then
-            echo "Found ${critical_count} CRITICAL and ${high_count} HIGH severity vulnerabilities."
+            echo "---"
+            echo "❌ Found ${critical_count} CRITICAL and ${high_count} HIGH severity vulnerabilities."
             echo "Failing build. View details at: ${CONSOLE_URL}"
             exit 1
           else
-            echo "No HIGH or CRITICAL vulnerabilities found."
+            echo "---"
+            echo "✅ No HIGH or CRITICAL vulnerabilities found."
           fi
 
   deploy:
