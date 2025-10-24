@@ -60,7 +60,7 @@ jobs:
           go-version: '1.24'
 
       - name: Run tests
-        run: go test ./...
+        run: go test ./src/...
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
