@@ -60,7 +60,7 @@ jobs:
           go-version: '1.24'
 
       - name: Run tests
-        run: go test ./...
+        run: go test ./src/...
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
@@ -294,6 +294,9 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Set Google Cloud project
+        run: gcloud config set project ${{ env.PROJECT_ID }}
+
       - name: Clean up old images
         continue-on-error: true
         run: |
@@ -338,8 +341,10 @@ jobs:
           # Create a unique, sorted list of images to keep
           unique_keep_list=$(printf "%s\n" "${images_to_keep_list[@]}" | sort -u)
 
-          echo "The following images will be kept:"
+          echo "---"
+          echo "Images to keep:"
           echo "$unique_keep_list"
+          echo "---"
 
           # Use `grep` to find images that are in all_images but not in unique_keep_list.
           # If grep finds no images to delete, it exits with 1, so we add `|| true`.
