@@ -15,7 +15,7 @@ COPY src/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
 # Use a slim base image
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
