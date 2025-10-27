@@ -17,6 +17,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 # Use a slim base image
 FROM debian:bookworm-slim
 
+# Update the base image to include the latest security patches
+RUN apt-get update && apt-get upgrade -y
+
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
 
