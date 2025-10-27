@@ -37,7 +37,6 @@ func TestSearchAddressHandler_Success_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// This is an integration test that hits the actual Swindon council API.
 			// It's intended to be run manually to diagnose issues.
-			t.Skip("Skipping integration test to avoid external network calls in CI")
 
 			escapedQuery := url.QueryEscape(tc.query)
 			req := httptest.NewRequest(http.MethodGet, "/search-address?q="+escapedQuery, nil)
