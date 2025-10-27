@@ -141,7 +141,7 @@ jobs:
               --filter="package='${IMAGE_URL_NO_TAG}' AND version='${IMAGE_DIGEST_FULL}'" \
               --show-occurrences --quiet)
 
-            if echo "$scan_output" | grep -q "VULNERABILITY"; then
+            if echo "$scan_output" | grep -q "FINISHED_SUCCESS"; then  #analysisStatus entity
               echo -e "\n---"
               echo "✅ Vulnerability scan complete."
               break
@@ -159,19 +159,13 @@ jobs:
           done
 
           # Now that the scan is complete, get the full summary
-          echo "Fetching vulnerability summary..."
-          vuln_summary_json=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --project=${{ env.PROJECT_ID }} --format=json --quiet)
+          echo "Parsing vulnerabilities..."
 
-          if [ -z "$vuln_summary_json" ]; then
-            echo "❌ Failed to fetch vulnerability summary."
-            exit 1
-          fi
-
-          critical_count=$(echo "$vuln_summary_json" | jq -r '.vulnerability_summary.counts[] | select(.severity=="CRITICAL") | .count' | awk '{s+=$1} END {print s+0}')
-          high_count=$(echo "$vuln_summary_json" | jq -r '.vulnerability_summary.counts[] | select(.severity=="HIGH") | .count' | awk '{s+=$1} END {print s+0}')
-          medium_count=$(echo "$vuln_summary_json" | jq -r '.vulnerability_summary.counts[] | select(.severity=="MEDIUM") | .count' | awk '{s+=$1} END {print s+0}')
-          low_count=$(echo "$vuln_summary_json" | jq -r '.vulnerability_summary.counts[] | select(.severity=="LOW") | .count' | awk '{s+=$1} END {print s+0}')
-
+          critical_count=$(echo "$scan_output" |yq '.vuln_counts.CRITICAL // 0' -)
+          high_count=$(echo "$scan_output" |yq '.vuln_counts.HIGH // 0' -)
+          medium_count=$(echo "$scan_output" |yq '.vuln_counts.MEDIUM // 0' -)
+          low_count=$(echo "$scan_output" |yq '.vuln_counts.LOW // 0' -)
+          
           echo "---"
           echo "Vulnerability Scan Summary:"
           echo "- CRITICAL: ${critical_count}"
