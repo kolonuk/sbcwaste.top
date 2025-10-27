@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 )
 
 type AddressSearchResult struct {
@@ -41,10 +42,15 @@ func searchAddress(query string) ([]AddressSearchResult, error) {
 	}
 
 	var results []AddressSearchResult
+	// This regex will match any HTML tags.
+	re := regexp.MustCompile("<(.|\n)*?>")
+
 	for _, data := range addressResponse.Data {
 		if len(data) > 2 {
+			// Strip HTML tags from the address.
+			address := re.ReplaceAllString(data[2], "")
 			results = append(results, AddressSearchResult{
-				Address: data[2],
+				Address: address,
 				UPRN:    data[0],
 			})
 		}
