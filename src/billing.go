@@ -71,11 +71,30 @@ func fetchAndMergeBillingData(ctx context.Context) ([]CostData, error) {
 		log.Printf("WARN: Could not fetch billing data from CSV, proceeding with BigQuery only: %v", err)
 	}
 
-	// 2. Determine the start date for the BigQuery query (first day of the current month).
-	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	// 2. Determine the start date for the BigQuery query.
+	var startDate time.Time
+	if len(csvData) > 0 {
+		// Find the latest month in the CSV data.
+		latestMonth := ""
+		for _, item := range csvData {
+			if item.YearMonth > latestMonth {
+				latestMonth = item.YearMonth
+			}
+		}
 
-	// 3. Fetch current data from BigQuery from the start date onwards.
+		// Start the BigQuery query from the month *after* the latest one in the CSV.
+		latestDate, err := time.Parse("2006-01", latestMonth)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse latest month from CSV: %w", err)
+		}
+		startDate = latestDate.AddDate(0, 1, 0)
+	} else {
+		// If there's no CSV data, fetch everything from the beginning of the project.
+		// Replace with a more appropriate start date if needed.
+		startDate = time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	// 3. Fetch current data from BigQuery from the calculated start date onwards.
 	bqData, err := fetchBillingData(ctx, startDate)
 	if err != nil {
 		// If CSV data is also empty, this is a fatal error.
