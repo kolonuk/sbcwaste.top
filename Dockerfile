@@ -17,8 +17,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 # Use a slim base image
 FROM debian:trixie-slim
 
-# Update the base image to include the latest security patches
-RUN apt-get update && apt-get upgrade -y
+# Update the base image to include the latest security patches and CA certificates
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y ca-certificates && \
+    update-ca-certificates
 
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
