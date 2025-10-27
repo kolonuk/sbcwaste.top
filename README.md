@@ -1,5 +1,12 @@
 # Swindon Borough Council Waste Collection API
 
+[![Go Tests](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=build)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+[![Gosec Security Scanner](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=build)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+[![Trivy Vulnerability Scanner](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=build)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+[![HTML Validator](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=validate-html)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+[![CSS Validator](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=validate-css)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+[![JavaScript Validator](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml/badge.svg?branch=main&event=push&job=validate-js)](https://github.com/418-teapot/sbc-waste-api-go/actions/workflows/google-cloudrun-docker.yml)
+
 This service provides waste collection dates for properties in Swindon, UK. It scrapes the Swindon Borough Council website to get the latest collection information.
 
 ## Usage
