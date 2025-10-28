@@ -176,54 +176,97 @@ func parseDate(dateStr string) (string, error) {
 // parseCollections parses the HTML document and extracts collection data.
 func parseCollections(doc *goquery.Document) (*Collections, error) {
 	var collections Collections
-	var types, dates []string
-
-	doc.Find("div.bin-collection-content h3").Each(func(i int, s *goquery.Selection) {
-		types = append(types, s.Text())
-	})
-
-	doc.Find("span.nextCollectionDate").Each(func(i int, s *goquery.Selection) {
-		dates = append(dates, s.Text())
-	})
-
-	if len(types) < 2 || len(dates) < 2 {
-		return nil, errors.New("failed to find all required nodes on the page")
-	}
-
 	var collectionsList []Collection
-	for i := 0; i < 2; i++ {
-		parsedDate, err := parseDate(dates[i])
-		if err != nil {
-			log.Printf("Could not parse date %s: %v", dates[i], err)
-			continue
-		}
-		collectionsList = append(collectionsList, Collection{
-			Type:            types[i],
-			CollectionDates: []string{parsedDate},
-		})
-	}
 
-	doc.Find("div.row.collection-next > div.row").Each(func(i int, s *goquery.Selection) {
-		s.Find("p").Each(func(j int, p *goquery.Selection) {
-			dateStr := strings.TrimSpace(p.Text())
-			if parsedDate, err := parseDate(dateStr); err == nil {
-				if i < len(collectionsList) {
-					collectionsList[i].CollectionDates = append(collectionsList[i].CollectionDates, parsedDate)
+	// New format check: Each collection is in a "div.bin-collection-container"
+	newFormatContainers := doc.Find("div.bin-collection-container")
+
+	if newFormatContainers.Length() > 0 {
+		// --- NEW PARSING LOGIC ---
+		newFormatContainers.Each(func(i int, container *goquery.Selection) {
+			collectionType := strings.TrimSpace(container.Find(".content-left h3").Text())
+			if collectionType == "" {
+				return // Skip if no type found
+			}
+
+			var dates []string
+			// Next collection date
+			nextDateStr := strings.TrimSpace(container.Find("span.nextCollectionDate").Text())
+			if parsedDate, err := parseDate(nextDateStr); err == nil {
+				dates = append(dates, parsedDate)
+			}
+
+			// Following collection dates
+			container.Find(".collection-next .row span").Each(func(_ int, span *goquery.Selection) {
+				dateStr := strings.TrimSpace(span.Text())
+				if parsedDate, err := parseDate(dateStr); err == nil {
+					dates = append(dates, parsedDate)
+				}
+			})
+
+			if len(dates) > 0 {
+				collectionsList = append(collectionsList, Collection{
+					Type:            collectionType,
+					CollectionDates: dates,
+				})
+			}
+		})
+
+	} else {
+		// --- OLD PARSING LOGIC (FALLBACK) ---
+		var types, dates []string
+		doc.Find("div.bin-collection-content h3").Each(func(i int, s *goquery.Selection) {
+			types = append(types, s.Text())
+		})
+
+		doc.Find("span.nextCollectionDate").Each(func(i int, s *goquery.Selection) {
+			dates = append(dates, s.Text())
+		})
+
+		var tempCollections []Collection
+		// The old format has two collections side-by-side.
+		if len(types) >= 2 && len(dates) >= 2 {
+			for i := 0; i < 2; i++ {
+				parsedDate, err := parseDate(dates[i])
+				if err != nil {
+					log.Printf("Could not parse date %s: %v", dates[i], err)
+					continue
+				}
+				tempCollections = append(tempCollections, Collection{
+					Type:            types[i],
+					CollectionDates: []string{parsedDate},
+				})
+			}
+		}
+
+		doc.Find("div.row.collection-next > div.row").Each(func(i int, s *goquery.Selection) {
+			s.Find("p").Each(func(j int, p *goquery.Selection) {
+				dateStr := strings.TrimSpace(p.Text())
+				if parsedDate, err := parseDate(dateStr); err == nil {
+					if i < len(tempCollections) {
+						tempCollections[i].CollectionDates = append(tempCollections[i].CollectionDates, parsedDate)
+					}
+				}
+			})
+		})
+
+		doc.Find(".bin-icons").Each(func(i int, s *goquery.Selection) {
+			style, _ := s.Attr("style")
+			re := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
+			matches := re.FindStringSubmatch(style)
+			if len(matches) > 1 {
+				if i < len(tempCollections) {
+					tempCollections[i].IconURL = matches[1]
 				}
 			}
 		})
-	})
 
-	doc.Find(".bin-icons").Each(func(i int, s *goquery.Selection) {
-		style, _ := s.Attr("style")
-		re := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
-		matches := re.FindStringSubmatch(style)
-		if len(matches) > 1 {
-			if i < len(collectionsList) {
-				collectionsList[i].IconURL = matches[1]
-			}
-		}
-	})
+		collectionsList = tempCollections
+	}
+
+	if len(collectionsList) == 0 {
+		return nil, errors.New("failed to find any collections on the page")
+	}
 
 	collections.Collections = collectionsList
 	return &collections, nil
