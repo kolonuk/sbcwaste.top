@@ -28,12 +28,15 @@ func TestSqliteCache(t *testing.T) {
 		t.Fatalf("Failed to set cache: %v", err)
 	}
 
-	cachedCollections, err := cache.Get("12345")
+	cachedCollections, created, err := cache.Get("12345")
 	if err != nil {
 		t.Fatalf("Failed to get cache: %v", err)
 	}
 	if cachedCollections == nil {
 		t.Fatal("Cache returned nil")
+	}
+	if created.IsZero() {
+		t.Fatal("Expected created timestamp, but it was zero")
 	}
 	if cachedCollections.Address != "Test Address" {
 		t.Errorf("Expected address 'Test Address', got '%s'", cachedCollections.Address)
@@ -44,7 +47,7 @@ func TestSqliteCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to set cache: %v", err)
 	}
-	cachedCollections, err = cache.Get("54321")
+	cachedCollections, _, err = cache.Get("54321")
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		t.Fatalf("Failed to get expired cache: %v", err)
 	}
