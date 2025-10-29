@@ -63,35 +63,40 @@ func shutdownSbcwasteChromedp() {
 	}
 }
 
-func getIcon(ctx context.Context, url string) (string, error) {
+func getIcon(ctx context.Context, url string) (string, bool, time.Duration, error) {
 	cache, err := NewCache(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize cache for icon: %w", err)
+		return "", false, 0, fmt.Errorf("failed to initialize cache for icon: %w", err)
 	}
 	defer cache.Close()
 
-	// The cache stores `*Collections`, so we'll wrap our string in a dummy structure.
-	// A bit of a hack, but it avoids rewriting the whole cache interface.
-	dummyCollections, err := cache.Get(url)
-	if err == nil && dummyCollections != nil && len(dummyCollections.Collections) > 0 {
-		return dummyCollections.Collections[0].IconDataURI, nil
+	appEnv := os.Getenv("APP_ENV")
+	useCache := appEnv == "production" || appEnv == "test"
+
+	if useCache {
+		dummyCollections, created, err := cache.Get(url)
+		if err == nil && dummyCollections != nil && len(dummyCollections.Collections) > 0 {
+			return dummyCollections.Collections[0].IconDataURI, true, time.Since(created), nil
+		}
 	}
 
-	// If not in cache, fetch, convert, and cache it
+	// If not in cache or in dev, fetch, convert, and cache it
 	iconDataURI, err := convertImageToBase64URI(url)
 	if err != nil {
-		return "", err
+		return "", false, 0, err
 	}
 
-	// Cache the icon for 7 days
-	dummyToCache := &Collections{
-		Collections: []Collection{{IconDataURI: iconDataURI}},
-	}
-	if err := cache.Set(url, dummyToCache, 7*24*time.Hour); err != nil {
-		log.Printf("Failed to cache icon for URL %s: %v", url, err)
+	if useCache {
+		// Cache the icon for 7 days
+		dummyToCache := &Collections{
+			Collections: []Collection{{IconDataURI: iconDataURI}},
+		}
+		if err := cache.Set(url, dummyToCache, 7*24*time.Hour); err != nil {
+			log.Printf("Failed to cache icon for URL %s: %v", url, err)
+		}
 	}
 
-	return iconDataURI, nil
+	return iconDataURI, false, 0, nil
 }
 
 func parseRequestParams(r *http.Request) (*requestParams, error) {
@@ -299,28 +304,60 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cache.Close()
 
-	collections, err := cache.Get(params.uprn)
-	if err != nil || collections == nil {
-		if params.debugging {
-			log.Printf("Cache miss for UPRN: %s", params.uprn)
+	appEnv := os.Getenv("APP_ENV")
+	useCache := appEnv == "production" || appEnv == "test"
+	var collections *Collections
+	var cacheHit bool
+	var cacheAge time.Duration
+
+	if useCache {
+		var created time.Time
+		var err error
+		collections, created, err = cache.Get(params.uprn)
+		if err != nil || collections == nil {
+			cacheHit = false
+			if params.debugging {
+				log.Printf("Cache miss for UPRN: %s", params.uprn)
+			}
+			collections, err = fetchCollectionsFromSBC(ctx, params)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			cacheExpirySecondsStr := os.Getenv("CACHE_EXPIRY_SECONDS")
+			cacheExpirySeconds, _ := strconv.Atoi(cacheExpirySecondsStr)
+			if cacheExpirySeconds <= 0 {
+				cacheExpirySeconds = 259200 // 3 days
+			}
+			if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
+				log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
+			}
+		} else {
+			cacheHit = true
+			cacheAge = time.Since(created)
+			if params.debugging {
+				log.Printf("Cache hit for UPRN: %s", params.uprn)
+			}
 		}
+	} else {
+		// In development, always fetch from the source
+		var err error
 		collections, err = fetchCollectionsFromSBC(ctx, params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
 			return
 		}
+	}
 
-		cacheExpirySecondsStr := os.Getenv("CACHE_EXPIRY_SECONDS")
-		cacheExpirySeconds, _ := strconv.Atoi(cacheExpirySecondsStr)
-		if cacheExpirySeconds <= 0 {
-			cacheExpirySeconds = 259200 // 3 days
-		}
-		if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
-			log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
-		}
-	} else {
-		if params.debugging {
-			log.Printf("Cache hit for UPRN: %s", params.uprn)
+	// If icons are requested, enrich the collections data with them.
+	// This is done after the primary data retrieval to keep the initial load fast.
+	if params.showIcons {
+		err = enrichCollectionsWithIcons(ctx, w, collections, params)
+		if err != nil {
+			// As per user request, don't fail the whole request.
+			// The error will be logged and the icon fields will be empty or contain an error message.
+			log.Printf("Could not enrich collections with icons: %v", err)
 		}
 	}
 
@@ -336,6 +373,12 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Cache-Control", "max-age=3600")
+	if useCache {
+		w.Header().Set("X-Mybin-Day-Data-From-Cache", strconv.FormatBool(cacheHit))
+		if cacheHit {
+			w.Header().Set("X-Mybin-Day-Data-Age-Seconds", fmt.Sprintf("%.0f", cacheAge.Seconds()))
+		}
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
@@ -399,7 +442,7 @@ func showHelp(w http.ResponseWriter) {
 
 // enrichCollectionsWithIcons uses a headless browser to scrape icon URLs and data URIs.
 // This function is called only when the user explicitly requests icons.
-func enrichCollectionsWithIcons(ctx context.Context, collections *Collections, params *requestParams) error {
+func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, collections *Collections, params *requestParams) error {
 	once.Do(func() {
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", true),
@@ -459,12 +502,23 @@ func enrichCollectionsWithIcons(ctx context.Context, collections *Collections, p
 		collections.Collections[i].IconURL = iconURL
 
 		// Now, fetch and encode the icon
-		iconDataURI, err := getIcon(ctx, iconURL)
+		iconDataURI, cacheHit, cacheAge, err := getIcon(ctx, iconURL)
 		if err != nil {
 			log.Printf("Failed to get icon for %s: %v", collectionType, err)
 			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
 		} else {
 			collections.Collections[i].IconDataURI = iconDataURI
+		}
+
+		appEnv := os.Getenv("APP_ENV")
+		if appEnv == "production" || appEnv == "test" {
+			// Sanitize collectionType for header name
+			headerName := strings.ReplaceAll(collectionType, " ", "-")
+			headerName = strings.ReplaceAll(headerName, "&", "and")
+			w.Header().Set("X-Mybin-Day-Icon-"+headerName+"-From-Cache", strconv.FormatBool(cacheHit))
+			if cacheHit {
+				w.Header().Set("X-Mybin-Day-Icon-"+headerName+"-Age-Seconds", fmt.Sprintf("%.0f", cacheAge.Seconds()))
+			}
 		}
 	}
 

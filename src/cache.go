@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -14,7 +15,7 @@ import (
 
 // Cache interface defines the methods for a cache
 type Cache interface {
-	Get(key string) (*Collections, error)
+	Get(key string) (*Collections, time.Time, error)
 	Set(key string, collections *Collections, expiration time.Duration) error
 	Close() error
 }
@@ -32,6 +33,7 @@ func NewSqliteCache() (*SqliteCache, error) {
 	}
 
 	// Create table if it doesn't exist
+	// Create table if it doesn't exist. This will create the table with the old schema if it's the first run.
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS cache (
 			key TEXT PRIMARY KEY,
@@ -43,18 +45,26 @@ func NewSqliteCache() (*SqliteCache, error) {
 		return nil, err
 	}
 
+	// Attempt to add the 'created' column to support migrations from the old schema.
+	// Ignore the error if the column already exists.
+	_, err = db.Exec("ALTER TABLE cache ADD COLUMN created INTEGER")
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return nil, err
+	}
+
 	return &SqliteCache{db: db}, nil
 }
 
 // Get retrieves a value from the SQLite cache
-func (c *SqliteCache) Get(key string) (*Collections, error) {
-	row := c.db.QueryRow("SELECT value, expiration FROM cache WHERE key = ?", key)
+func (c *SqliteCache) Get(key string) (*Collections, time.Time, error) {
+	row := c.db.QueryRow("SELECT value, expiration, created FROM cache WHERE key = ?", key)
 
 	var value string
 	var expiration int64
-	err := row.Scan(&value, &expiration)
+	var created int64
+	err := row.Scan(&value, &expiration, &created)
 	if err != nil {
-		return nil, err // This will be sql.ErrNoRows for a cache miss
+		return nil, time.Time{}, err // This will be sql.ErrNoRows for a cache miss
 	}
 
 	if time.Now().Unix() > expiration {
@@ -62,16 +72,16 @@ func (c *SqliteCache) Get(key string) (*Collections, error) {
 		if _, err := c.db.Exec("DELETE FROM cache WHERE key = ?", key); err != nil {
 			log.Printf("Failed to delete expired cache entry for key %s: %v", key, err)
 		}
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 
 	var collections Collections
 	err = json.Unmarshal([]byte(value), &collections)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 
-	return &collections, nil
+	return &collections, time.Unix(created, 0), nil
 }
 
 // Set adds a value to the SQLite cache
@@ -81,11 +91,13 @@ func (c *SqliteCache) Set(key string, collections *Collections, expiration time.
 		return err
 	}
 
-	expirationTime := time.Now().Add(expiration).Unix()
+	now := time.Now()
+	expirationTime := now.Add(expiration).Unix()
+	createdTime := now.Unix()
 
 	_, err = c.db.Exec(
-		"INSERT OR REPLACE INTO cache (key, value, expiration) VALUES (?, ?, ?)",
-		key, string(value), expirationTime,
+		"INSERT OR REPLACE INTO cache (key, value, expiration, created) VALUES (?, ?, ?, ?)",
+		key, string(value), expirationTime, createdTime,
 	)
 	return err
 }
@@ -105,6 +117,7 @@ type FirestoreCache struct {
 type FirestoreCacheItem struct {
 	Value      string    `firestore:"value"`
 	Expiration time.Time `firestore:"expiration"`
+	Created    time.Time `firestore:"created"`
 }
 
 // NewFirestoreCache creates a new FirestoreCache
@@ -127,31 +140,31 @@ func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
 }
 
 // Get retrieves a value from the Firestore cache
-func (c *FirestoreCache) Get(key string) (*Collections, error) {
+func (c *FirestoreCache) Get(key string) (*Collections, time.Time, error) {
 	doc, err := c.collection.Doc(key).Get(context.Background())
 	if err != nil {
 		// This will handle the case where the document doesn't exist (cache miss)
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 
 	var item FirestoreCacheItem
 	if err := doc.DataTo(&item); err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 
 	if time.Now().After(item.Expiration) {
 		// Cache expired, delete the document
 		_, _ = c.collection.Doc(key).Delete(context.Background())
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 
 	var collections Collections
 	err = json.Unmarshal([]byte(item.Value), &collections)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 
-	return &collections, nil
+	return &collections, item.Created, nil
 }
 
 // Set adds a value to the Firestore cache
@@ -161,9 +174,11 @@ func (c *FirestoreCache) Set(key string, collections *Collections, expiration ti
 		return err
 	}
 
+	now := time.Now()
 	item := FirestoreCacheItem{
 		Value:      string(val),
-		Expiration: time.Now().Add(expiration),
+		Expiration: now.Add(expiration),
+		Created:    now,
 	}
 
 	_, err = c.collection.Doc(key).Set(context.Background(), item)
@@ -179,8 +194,8 @@ func (c *FirestoreCache) Close() error {
 // based on the environment
 func NewCache(ctx context.Context) (Cache, error) {
 	appEnv := os.Getenv("APP_ENV")
-	if appEnv == "development" {
-		log.Println("Using SQLite cache for local development")
+	if appEnv == "development" || appEnv == "test" {
+		log.Println("Using SQLite cache for local development/testing")
 		return NewSqliteCache()
 	}
 
