@@ -361,6 +361,17 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// If icons are requested, enrich the collections data with them.
+	// This is done after the primary data retrieval to keep the initial load fast.
+	if params.showIcons {
+		err = enrichCollectionsWithIcons(ctx, collections, params)
+		if err != nil {
+			// As per user request, don't fail the whole request.
+			// The error will be logged and the icon fields will be empty or contain an error message.
+			log.Printf("Could not enrich collections with icons: %v", err)
+		}
+	}
+
 	w.Header().Set("Cache-Control", "max-age=3600")
 	if useCache {
 		w.Header().Set("X-Mybin-Day-Data-From-Cache", strconv.FormatBool(cacheHit))
