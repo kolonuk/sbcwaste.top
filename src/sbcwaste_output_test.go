@@ -155,7 +155,7 @@ func TestDebugOutput(t *testing.T) {
 		log.SetOutput(os.Stderr)
 	}()
 
-	os.Setenv("APP_ENV", "development")
+	os.Setenv("APP_ENV", "test")
 	defer os.Unsetenv("APP_ENV")
 
 	req := httptest.NewRequest("GET", "/12345/json?debug=yes", nil)
