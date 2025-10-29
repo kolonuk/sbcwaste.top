@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/chromedp/chromedp"
 	"gopkg.in/yaml.v2"
 )
 
@@ -48,17 +49,32 @@ type requestParams struct {
 	showIcons bool
 }
 
-var iconCache = struct {
-	sync.RWMutex
-	data map[string]string
-}{data: make(map[string]string)}
+var (
+	once            sync.Once
+	chromedpContext context.Context
+	cancel          context.CancelFunc
+)
 
-func getIcon(url string) (string, error) {
-	iconCache.RLock()
-	cachedIcon, ok := iconCache.data[url]
-	iconCache.RUnlock()
-	if ok {
-		return cachedIcon, nil
+func shutdownSbcwasteChromedp() {
+	// this function is called from main.go to ensure graceful shutdown of the browser
+	if cancel != nil {
+		cancel()
+		log.Println("Chromedp context cancelled.")
+	}
+}
+
+func getIcon(ctx context.Context, url string) (string, error) {
+	cache, err := NewCache(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize cache for icon: %w", err)
+	}
+	defer cache.Close()
+
+	// The cache stores `*Collections`, so we'll wrap our string in a dummy structure.
+	// A bit of a hack, but it avoids rewriting the whole cache interface.
+	dummyCollections, err := cache.Get(url)
+	if err == nil && dummyCollections != nil && len(dummyCollections.Collections) > 0 {
+		return dummyCollections.Collections[0].IconDataURI, nil
 	}
 
 	// If not in cache, fetch, convert, and cache it
@@ -67,9 +83,13 @@ func getIcon(url string) (string, error) {
 		return "", err
 	}
 
-	iconCache.Lock()
-	iconCache.data[url] = iconDataURI
-	iconCache.Unlock()
+	// Cache the icon for 7 days
+	dummyToCache := &Collections{
+		Collections: []Collection{{IconDataURI: iconDataURI}},
+	}
+	if err := cache.Set(url, dummyToCache, 7*24*time.Hour); err != nil {
+		log.Printf("Failed to cache icon for URL %s: %v", url, err)
+	}
 
 	return iconDataURI, nil
 }
@@ -140,19 +160,6 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 	collections, err := parseCollections(doc)
 	if err != nil {
 		return nil, err
-	}
-
-	if params.showIcons {
-		for i := range collections.Collections {
-			if collections.Collections[i].IconURL != "" {
-				iconDataURI, err := getIcon(collections.Collections[i].IconURL)
-				if err != nil {
-					log.Printf("Failed to get icon %s: %v", collections.Collections[i].IconURL, err)
-					continue
-				}
-				collections.Collections[i].IconDataURI = iconDataURI
-			}
-		}
 	}
 
 	address, err := getAddressFromUPRN(params.uprn, params.debugging)
@@ -317,6 +324,17 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// If icons are requested, enrich the collections data with them.
+	// This is done after the primary data retrieval to keep the initial load fast.
+	if params.showIcons {
+		err = enrichCollectionsWithIcons(ctx, collections, params)
+		if err != nil {
+			// As per user request, don't fail the whole request.
+			// The error will be logged and the icon fields will be empty or contain an error message.
+			log.Printf("Could not enrich collections with icons: %v", err)
+		}
+	}
+
 	w.Header().Set("Cache-Control", "max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -379,6 +397,80 @@ func showHelp(w http.ResponseWriter) {
 	fmt.Fprintln(w, "</ul>")
 }
 
+// enrichCollectionsWithIcons uses a headless browser to scrape icon URLs and data URIs.
+// This function is called only when the user explicitly requests icons.
+func enrichCollectionsWithIcons(ctx context.Context, collections *Collections, params *requestParams) error {
+	once.Do(func() {
+		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.Flag("headless", true),
+			chromedp.Flag("disable-gpu", true),
+			chromedp.Flag("no-sandbox", true),
+		)
+		allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
+		chromedpContext, cancel = chromedp.NewContext(allocCtx)
+	})
+
+	var iconURLs map[string]string
+	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
+
+	err := chromedp.Run(chromedpContext,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible("div.bin-collection-container", chromedp.ByQuery),
+		chromedp.Evaluate(`(function() {
+			const results = {};
+			document.querySelectorAll('.bin-collection-container').forEach(container => {
+				const h3 = container.querySelector('h3');
+				const iconDiv = container.querySelector('.bin-icons');
+				if (h3 && iconDiv) {
+					const collectionType = h3.innerText.trim();
+					const style = window.getComputedStyle(iconDiv);
+					const bgImage = style.getPropertyValue('background-image');
+					results[collectionType] = bgImage;
+				}
+			});
+			return results;
+		})()`, &iconURLs),
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to get icon URLs via chromedp: %w", err)
+	}
+
+	urlRegex := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
+
+	for i := range collections.Collections {
+		collectionType := collections.Collections[i].Type
+		bgImage, ok := iconURLs[collectionType]
+		if !ok {
+			collections.Collections[i].IconURL = "Error: Icon not found for this collection type."
+			continue
+		}
+
+		matches := urlRegex.FindStringSubmatch(bgImage)
+		if len(matches) < 2 {
+			collections.Collections[i].IconURL = "Error: Could not parse icon URL from CSS."
+			continue
+		}
+		iconURL := matches[1]
+		// a silly hack to get around the fact that the council has a malformed url in their css
+		if !strings.HasPrefix(iconURL, "http") {
+			iconURL = "https://www.swindon.gov.uk" + iconURL
+		}
+		collections.Collections[i].IconURL = iconURL
+
+		// Now, fetch and encode the icon
+		iconDataURI, err := getIcon(ctx, iconURL)
+		if err != nil {
+			log.Printf("Failed to get icon for %s: %v", collectionType, err)
+			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
+		} else {
+			collections.Collections[i].IconDataURI = iconDataURI
+		}
+	}
+
+	return nil
+}
+
 func formatAsICS(w http.ResponseWriter, collections *Collections, params *requestParams) {
 	appEnv := os.Getenv("APP_ENV")
 	if appEnv == "" {
@@ -399,10 +491,9 @@ func formatAsICS(w http.ResponseWriter, collections *Collections, params *reques
 			end := eventDate.Add(24 * time.Hour).Format("20060102")
 			summary := foldLine(fmt.Sprintf("SUMMARY:%s", collection.Type))
 			location := foldLine(fmt.Sprintf("LOCATION:%s", collections.Address))
-			attach := foldLine(fmt.Sprintf("ATTACH;VALUE=URI:%s", collection.IconDataURI))
 			urlLine := foldLine(fmt.Sprintf("URL:%s", url))
-			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n",
-				uid, dtStamp, start, end, summary, location, attach, urlLine)
+			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n",
+				uid, dtStamp, start, end, summary, location, urlLine)
 		}
 	}
 	icsBuilder.WriteString("END:VCALENDAR")

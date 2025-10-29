@@ -22,6 +22,7 @@ func main() {
 	go func() {
 		<-stop
 		log.Println("Shutting down gracefully...")
+		shutdownChromedp()
 		os.Exit(0)
 	}()
 
