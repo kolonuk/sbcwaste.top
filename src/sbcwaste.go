@@ -364,7 +364,7 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	// If icons are requested, enrich the collections data with them.
 	// This is done after the primary data retrieval to keep the initial load fast.
 	if params.showIcons {
-		err = enrichCollectionsWithIcons(ctx, collections, params)
+		err = enrichCollectionsWithIcons(ctx, w, collections, params)
 		if err != nil {
 			// As per user request, don't fail the whole request.
 			// The error will be logged and the icon fields will be empty or contain an error message.
@@ -453,10 +453,14 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		chromedpContext, cancel = chromedp.NewContext(allocCtx)
 	})
 
+	// Create a new context with a 30-second timeout.
+	ctx, cancel := context.WithTimeout(chromedpContext, 30*time.Second)
+	defer cancel()
+
 	var iconURLs map[string]string
 	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
 
-	err := chromedp.Run(chromedpContext,
+	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible("div.bin-collection-container", chromedp.ByQuery),
 		chromedp.Evaluate(`(function() {
