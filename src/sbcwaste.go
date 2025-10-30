@@ -31,7 +31,7 @@ import (
 type Collection struct {
 	Type            string   `json:"type" xml:"type" yaml:"type"`
 	CollectionDates []string `json:"CollectionDates" xml:"CollectionDates" yaml:"CollectionDates"`
-	IconURL         string   `json:"iconURL" xml:"iconURL" yaml:"iconURL"`
+	IconURL         string   `json:"iconURL,omitempty" xml:"iconURL,omitempty" yaml:"iconURL,omitempty"`
 	IconDataURI     string   `json:"iconDataURI,omitempty" xml:"iconDataURI,omitempty" yaml:"iconDataURI,omitempty"`
 }
 
