@@ -31,7 +31,7 @@ import (
 type Collection struct {
 	Type            string   `json:"type" xml:"type" yaml:"type"`
 	CollectionDates []string `json:"CollectionDates" xml:"CollectionDates" yaml:"CollectionDates"`
-	IconURL         string   `json:"iconURL" xml:"iconURL" yaml:"iconURL"`
+	IconURL         string   `json:"iconURL,omitempty" xml:"iconURL,omitempty" yaml:"iconURL,omitempty"`
 	IconDataURI     string   `json:"iconDataURI,omitempty" xml:"iconDataURI,omitempty" yaml:"iconDataURI,omitempty"`
 }
 
@@ -364,7 +364,7 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	// If icons are requested, enrich the collections data with them.
 	// This is done after the primary data retrieval to keep the initial load fast.
 	if params.showIcons {
-		err = enrichCollectionsWithIcons(ctx, collections, params)
+		err = enrichCollectionsWithIcons(ctx, w, collections, params)
 		if err != nil {
 			// As per user request, don't fail the whole request.
 			// The error will be logged and the icon fields will be empty or contain an error message.
