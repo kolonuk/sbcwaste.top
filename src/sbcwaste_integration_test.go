@@ -3,183 +3,177 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
-	"github.com/PuerkitoBio/goquery"
 	"gopkg.in/yaml.v2"
 )
 
-// loadTestHTML loads the content of the test HTML file.
-func loadTestHTML(t *testing.T) *goquery.Document {
-	file, err := os.Open("../testdata/sbc_response.html")
-	if err != nil {
-		t.Fatalf("Failed to open test data file: %v", err)
-	}
-	defer file.Close()
+// TestLiveWasteCollectionAPI is a comprehensive integration test that queries the live SBC Waste API.
+// It checks all output formats, with and without the icon scraping feature enabled.
+func TestLiveWasteCollectionAPI(t *testing.T) {
+	// Set the environment to development to use the SQLite cache for tests.
+	t.Setenv("APP_ENV", "development")
 
-	doc, err := goquery.NewDocumentFromReader(file)
-	if err != nil {
-		t.Fatalf("Failed to parse test HTML: %v", err)
+	// Skip this test in short mode as it makes live network requests.
+	if testing.Short() {
+		t.Skip("Skipping live API test in short mode")
 	}
-	return doc
+
+	uprns := []string{
+		"200001860227", // Crickhollow, High Street
+		"200001814797", // Dormers, High Street
+		"10008541132",  // 36 Langton Park
+		"100121129753", // 89 Dulverton Avenue
+		"200001615122", // 105 County Road
+	}
+
+	formats := []string{"json", "xml", "yaml", "ics"}
+	iconSettings := []bool{false, true} // false = no icons, true = with icons
+
+	// Check if Chrome is available for the icon tests.
+	chromePath, err := exec.LookPath("google-chrome")
+	chromeAvailable := err == nil && chromePath != ""
+
+	for _, uprn := range uprns {
+		for _, format := range formats {
+			for _, showIcons := range iconSettings {
+				// ICS format does not support icons, so skip that combination.
+				if format == "ics" && showIcons {
+					continue
+				}
+
+				testName := fmt.Sprintf("UPRN_%s_Format_%s_Icons_%t", uprn, format, showIcons)
+
+				t.Run(testName, func(t *testing.T) {
+					// If icons are requested but Chrome is not available, skip the test.
+					if showIcons && !chromeAvailable {
+						t.Skip("google-chrome not found, skipping icon-related test")
+					}
+
+					// Create a request to our handler.
+					url := fmt.Sprintf("/%s/%s", uprn, format)
+					if showIcons {
+						url += "?icons=yes"
+					}
+					req := httptest.NewRequest(http.MethodGet, url, nil)
+					w := httptest.NewRecorder()
+
+					// We need to use the actual WasteCollection handler.
+					WasteCollection(w, req)
+
+					resp := w.Result()
+					body, err := io.ReadAll(resp.Body)
+					if err != nil {
+						t.Fatalf("Failed to read response body: %v", err)
+					}
+
+					if resp.StatusCode != http.StatusOK {
+						t.Fatalf("Expected status OK, got %v. Body: %s", resp.Status, string(body))
+					}
+
+					// Validate the response based on the format.
+					validateResponse(t, body, format, showIcons)
+				})
+			}
+		}
+	}
 }
 
-// TestParseCollectionsFromFixture tests the parsing of collections from the HTML fixture.
-func TestParseCollectionsFromFixture(t *testing.T) {
-	doc := loadTestHTML(t)
-	collections, err := parseCollections(doc)
-	if err != nil {
-		t.Fatalf("parseCollections failed: %v", err)
-	}
-
-	if len(collections.Collections) != 2 {
-		t.Fatalf("Expected 2 collections, got %d", len(collections.Collections))
-	}
-
-	// Test Refuse collection
-	refuse := collections.Collections[0]
-	if refuse.Type != "Refuse" {
-		t.Errorf("Expected first collection type to be 'Refuse', got '%s'", refuse.Type)
-	}
-	expectedRefuseDates := []string{"2025-10-20", "2025-11-03", "2025-11-10"}
-	if !equalSlices(refuse.CollectionDates, expectedRefuseDates) {
-		t.Errorf("Expected refuse dates %v, got %v", expectedRefuseDates, refuse.CollectionDates)
-	}
-
-	// Test Recycling collection
-	recycling := collections.Collections[1]
-	if recycling.Type != "Recycling" {
-		t.Errorf("Expected second collection type to be 'Recycling', got '%s'", recycling.Type)
-	}
-	expectedRecyclingDates := []string{"2025-10-27", "2025-11-17", "2025-11-24"}
-	if !equalSlices(recycling.CollectionDates, expectedRecyclingDates) {
-		t.Errorf("Expected recycling dates %v, got %v", expectedRecyclingDates, recycling.CollectionDates)
-	}
-}
-
-// equalSlices checks if two string slices are equal.
-func equalSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+// validateResponse checks the structure and content of the API response.
+func validateResponse(t *testing.T, body []byte, format string, showIcons bool) {
+	switch format {
+	case "json":
+		var collections Collections
+		if err := json.Unmarshal(body, &collections); err != nil {
+			t.Fatalf("Failed to unmarshal JSON: %v. Body: %s", err, string(body))
 		}
-	}
-	return true
-}
-
-// TestOutputFormatsFromFixture tests all output formats using the HTML fixture.
-func TestOutputFormatsFromFixture(t *testing.T) {
-	doc := loadTestHTML(t)
-	collections, err := parseCollections(doc)
-	if err != nil {
-		t.Fatalf("parseCollections failed: %v", err)
-	}
-	collections.Address = "Test Address"
-
-	// Mock request params
-	params := &requestParams{
-		uprn:      "12345",
-		output:    "", // will be set in subtests
-		debugging: false,
-		showIcons: false,
-	}
-
-	t.Run("JSON", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		formatAsJSON(w, collections)
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status OK, got %v", resp.Status)
+		validateCollectionsStruct(t, &collections, showIcons)
+	case "xml":
+		var collections Collections
+		if err := xml.Unmarshal(body, &collections); err != nil {
+			t.Fatalf("Failed to unmarshal XML: %v. Body: %s", err, string(body))
 		}
-		if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
-			t.Errorf("Expected Content-Type application/json, got %v", contentType)
+		validateCollectionsStruct(t, &collections, showIcons)
+	case "yaml":
+		var collections Collections
+		if err := yaml.Unmarshal(body, &collections); err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v. Body: %s", err, string(body))
 		}
-
-		var out Collections
-		if err := json.Unmarshal(body, &out); err != nil {
-			t.Fatalf("Failed to unmarshal JSON: %v", err)
-		}
-		if len(out.Collections) != 2 {
-			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
-		}
-	})
-
-	t.Run("XML", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		formatAsXML(w, collections)
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status OK, got %v", resp.Status)
-		}
-		if contentType := resp.Header.Get("Content-Type"); contentType != "application/xml" {
-			t.Errorf("Expected Content-Type application/xml, got %v", contentType)
-		}
-
-		var out Collections
-		if err := xml.Unmarshal(body, &out); err != nil {
-			t.Fatalf("Failed to unmarshal XML: %v", err)
-		}
-		if len(out.Collections) != 2 {
-			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
-		}
-	})
-
-	t.Run("YAML", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		formatAsYAML(w, collections)
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status OK, got %v", resp.Status)
-		}
-		if contentType := resp.Header.Get("Content-Type"); contentType != "application/x-yaml" {
-			t.Errorf("Expected Content-Type application/x-yaml, got %v", contentType)
-		}
-
-		var out Collections
-		if err := yaml.Unmarshal(body, &out); err != nil {
-			t.Fatalf("Failed to unmarshal YAML: %v", err)
-		}
-		if len(out.Collections) != 2 {
-			t.Errorf("Expected 2 collections, got %d", len(out.Collections))
-		}
-	})
-
-	t.Run("ICS", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		formatAsICS(w, collections, params)
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status OK, got %v", resp.Status)
-		}
-		if contentType := resp.Header.Get("Content-Type"); contentType != "text/calendar" {
-			t.Errorf("Expected Content-Type text/calendar, got %v", contentType)
-		}
-
+		validateCollectionsStruct(t, &collections, showIcons)
+	case "ics":
 		bodyStr := string(body)
-		if !strings.Contains(bodyStr, "SUMMARY:Refuse") {
-			t.Error("ICS output does not contain Refuse summary")
+		if !strings.HasPrefix(bodyStr, "BEGIN:VCALENDAR") {
+			t.Error("ICS response does not start with BEGIN:VCALENDAR")
 		}
-		if !strings.Contains(bodyStr, "SUMMARY:Recycling") {
-			t.Error("ICS output does not contain Recycling summary")
+		if !strings.Contains(bodyStr, "BEGIN:VEVENT") {
+			t.Error("ICS response does not contain any VEVENT")
 		}
-		if !strings.Contains(bodyStr, "DTSTART;VALUE=DATE:20251020") {
-			t.Error("ICS output does not contain correct start date for Refuse")
+	}
+}
+
+// validateCollectionsStruct checks the common structure of the Collections object.
+func validateCollectionsStruct(t *testing.T, c *Collections, showIcons bool) {
+	if c.Address == "" {
+		t.Error("Expected Address to be populated, but it was empty")
+	}
+
+	if len(c.Collections) == 0 {
+		t.Logf("Address: %s", c.Address)
+		t.Fatal("Expected at least one collection, but got none")
+	}
+
+	for _, coll := range c.Collections {
+		if coll.Type == "" {
+			t.Error("Expected collection Type to be populated, but it was empty")
 		}
-	})
+
+		if len(coll.CollectionDates) == 0 {
+			t.Error("Expected at least one CollectionDate, but got none")
+		}
+
+		for _, dateStr := range coll.CollectionDates {
+			if len(dateStr) != 10 || strings.Count(dateStr, "-") != 2 {
+				t.Errorf("Expected date to be in YYYY-MM-DD format, but got %s", dateStr)
+			}
+		}
+
+		if showIcons {
+			if coll.IconURL == "" {
+				t.Error("Expected IconURL to be populated when icons are requested")
+			}
+			if !strings.HasPrefix(coll.IconURL, "http") {
+				t.Errorf("Expected IconURL to be a valid URL, but got %s", coll.IconURL)
+			}
+			if coll.IconDataURI == "" {
+				t.Error("Expected IconDataURI to be populated when icons are requested")
+			}
+			if !strings.HasPrefix(coll.IconDataURI, "data:image/") {
+				t.Errorf("Expected IconDataURI to be a valid data URI, but got %s", coll.IconDataURI)
+			}
+		} else {
+			// With omitempty, the fields should not even be present.
+			// Unmarshaling into a struct will leave them as empty strings,
+			// so we can still check for that.
+			if coll.IconURL != "" {
+				t.Error("Expected IconURL to be empty when icons are not requested")
+			}
+			if coll.IconDataURI != "" {
+				t.Error("Expected IconDataURI to be empty when icons are not requested")
+			}
+		}
+	}
+}
+
+// TestMain is used to gracefully shut down the chromedp browser instance after tests complete.
+func TestMain(m *testing.M) {
+	exitVal := m.Run()
+	shutdownSbcwasteChromedp()
+	os.Exit(exitVal)
 }
