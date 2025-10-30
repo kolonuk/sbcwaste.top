@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -11,9 +12,33 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/chromedp/chromedp"
 	"gopkg.in/yaml.v2"
 )
+
+var chromeAvailable bool
+
+// TestMain sets up and tears down the test environment.
+func TestMain(m *testing.M) {
+	// Check if Chrome is available by trying to create a new context.
+	// We use a short timeout to avoid hanging.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	allocCtx, cancel2 := chromedp.NewExecAllocator(ctx)
+	defer cancel2()
+	_, err := chromedp.NewContext(allocCtx)
+	chromeAvailable = err == nil
+
+	// Run the tests.
+	exitVal := m.Run()
+
+	// Gracefully shut down the browser.
+	shutdownSbcwasteChromedp()
+
+	os.Exit(exitVal)
+}
 
 // TestLiveWasteCollectionAPI is a comprehensive integration test that queries the live SBC Waste API.
 // It checks all output formats, with and without the icon scraping feature enabled.
@@ -37,10 +62,6 @@ func TestLiveWasteCollectionAPI(t *testing.T) {
 	formats := []string{"json", "xml", "yaml", "ics"}
 	iconSettings := []bool{false, true} // false = no icons, true = with icons
 
-	// Check if Chrome is available for the icon tests.
-	chromePath, err := exec.LookPath("google-chrome")
-	chromeAvailable := err == nil && chromePath != ""
-
 	for _, uprn := range uprns {
 		for _, format := range formats {
 			for _, showIcons := range iconSettings {
@@ -54,7 +75,7 @@ func TestLiveWasteCollectionAPI(t *testing.T) {
 				t.Run(testName, func(t *testing.T) {
 					// If icons are requested but Chrome is not available, skip the test.
 					if showIcons && !chromeAvailable {
-						t.Skip("google-chrome not found, skipping icon-related test")
+						t.Skip("google-chrome not found or not functional, skipping icon-related test")
 					}
 
 					// Create a request to our handler.
@@ -169,11 +190,4 @@ func validateCollectionsStruct(t *testing.T, c *Collections, showIcons bool) {
 			}
 		}
 	}
-}
-
-// TestMain is used to gracefully shut down the chromedp browser instance after tests complete.
-func TestMain(m *testing.M) {
-	exitVal := m.Run()
-	shutdownSbcwasteChromedp()
-	os.Exit(exitVal)
 }
