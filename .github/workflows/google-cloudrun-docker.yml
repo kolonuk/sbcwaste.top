@@ -47,7 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - name: Checkout
+      - name: Checkout PR Head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Checkout Push
+        if: github.event_name == 'push'
         uses: actions/checkout@v4
       - name: Validate HTML
         uses: chkashyap/HTML-Validator@main
@@ -59,7 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - name: Checkout
+      - name: Checkout PR Head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Checkout Push
+        if: github.event_name == 'push'
         uses: actions/checkout@v4
       - name: Validate CSS
         uses: Cyb3r-Jak3/css-validator-action@v1
@@ -71,7 +83,13 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - name: Checkout
+      - name: Checkout PR Head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Checkout Push
+        if: github.event_name == 'push'
         uses: actions/checkout@v4
       - name: Validate JavaScript
         run: node -c static/script.js
@@ -82,7 +100,13 @@ jobs:
     outputs:
       image_name: ${{ steps.build-image.outputs.image_name }}
     steps:
-      - name: Checkout
+      - name: Checkout PR Head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Checkout Push
+        if: github.event_name == 'push'
         uses: actions/checkout@v4
 
       - name: Install jq
