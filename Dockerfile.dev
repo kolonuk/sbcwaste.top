@@ -1,5 +1,5 @@
 # Use the official Go image for the development environment
-FROM golang:1.24.3
+FROM golang:1.24.10
 
 # Set the working directory inside the container
 WORKDIR /app
