@@ -57,6 +57,24 @@ To clear the Firestore cache in the cloud environment, you can delete the docume
 2.  **Run the application:** `go run ./src`
 3.  **Run tests:** `go test ./...`
 
+## Development Environment
+
+For a consistent development environment, you can use the provided development Docker container. This container includes all the necessary dependencies and tools for working on this project.
+
+**Building the Development Container:**
+
+```bash
+docker build -f Dockerfile.dev -t sbc-waste-api-dev .
+```
+
+**Running the Development Container:**
+
+```bash
+docker run -it -v $(pwd):/app sbc-waste-api-dev
+```
+
+This will give you an interactive shell inside the container, with the project directory mounted at `/app`. You can then run any commands you need, such as `go test ./...` or `go run ./src`.
+
 ## Notes
 
 *   The application uses a local SQLite database (`sbcwaste.db`) for caching in development. This file is git-ignored.

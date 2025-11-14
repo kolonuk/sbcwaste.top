@@ -1,0 +1,14 @@
+# Use the official Go image for the development environment
+FROM golang:1.24.3
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the Go module files and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+
+# This container will not run any command by default,
+# instead it will provide a shell for manual commands.
+CMD ["/bin/bash"]
