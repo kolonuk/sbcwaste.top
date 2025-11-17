@@ -59,6 +59,8 @@ To clear the Firestore cache in the cloud environment, you can delete the docume
 
 ## Notes
 
+*   **Address Lookup Service:** The external service used for address lookups (`maps.swindon.gov.uk`) is currently experiencing an issue with its TLS certificate, causing address searches to fail. The issue has been reported to the service provider. In the meantime, the application will return a user-friendly error message.
+
 *   The application uses a local SQLite database (`sbcwaste.db`) for caching in development. This file is git-ignored.
 *   The compiled binary (`sbcwaste`) is also git-ignored.
 *   The application uses `chromedp` for web scraping. You may need to have chromium installed. On ubuntu, you can use `sudo apt install -y chromium-browser`
