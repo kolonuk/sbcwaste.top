@@ -133,13 +133,13 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 }
 
 // fetchCollectionsFromSBC fetches waste collection data from the SBC website using HTTP requests.
-var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (*Collections, error) {
+var fetchCollectionsFromSBC = func(ctx context.Context, client *http.Client, params *requestParams) (*Collections, error) {
 	if params.debugging {
 		log.Printf("Fetching URL: https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=%s&uprnSubmit=Yes", params.uprn)
 	}
 
 	// Create a new HTTP client with a timeout
-	client := &http.Client{
+	sbcClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList="+params.uprn+"&uprnSubmit=Yes", nil)
@@ -147,7 +147,7 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	res, err := client.Do(req)
+	res, err := sbcClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -167,7 +167,7 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 		return nil, err
 	}
 
-	address, err := getAddressFromUPRN(params.uprn, params.debugging)
+	address, err := getAddressFromUPRN(client, params.uprn, params.debugging)
 	if err != nil {
 		log.Printf("Failed to get address from UPRN: %v\n", err)
 	} else {
@@ -319,7 +319,14 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			if params.debugging {
 				log.Printf("Cache miss for UPRN: %s", params.uprn)
 			}
-			collections, err = fetchCollectionsFromSBC(ctx, params)
+			insecure := r.URL.Query().Get("insecure") == "true"
+			var client *http.Client
+			if insecure {
+				client = InsecureHTTPClient
+			} else {
+				client = HTTPClient
+			}
+			collections, err = fetchCollectionsFromSBC(ctx, client, params)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
 				return
@@ -343,7 +350,14 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// In development, always fetch from the source
 		var err error
-		collections, err = fetchCollectionsFromSBC(ctx, params)
+		insecure := r.URL.Query().Get("insecure") == "true"
+		var client *http.Client
+		if insecure {
+			client = InsecureHTTPClient
+		} else {
+			client = HTTPClient
+		}
+		collections, err = fetchCollectionsFromSBC(ctx, client, params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
 			return
