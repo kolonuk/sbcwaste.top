@@ -40,13 +40,23 @@ type Collections struct {
 	XMLName     xml.Name     `json:"-" xml:"collections" yaml:"-"`
 	Collections []Collection `json:"collections" xml:"collection" yaml:"collections"`
 	Address     string       `json:"address" xml:"address" yaml:"address"`
+	CacheInfo   *CacheInfo   `json:"cacheInfo,omitempty" xml:"cacheInfo,omitempty" yaml:"cacheInfo,omitempty"`
+}
+
+// CacheInfo holds statistics about the cache
+type CacheInfo struct {
+	Source      string `json:"source" xml:"source" yaml:"source"`
+	Age         string `json:"age" xml:"age" yaml:"age"`
+	ExpiresIn   string `json:"expiresIn" xml:"expiresIn" yaml:"expiresIn"`
 }
 
 type requestParams struct {
-	uprn      string
-	output    string
-	debugging bool
-	showIcons bool
+	uprn         string
+	output       string
+	debugging    bool
+	showIcons    bool
+	skipCache    bool
+	showCacheStats bool
 }
 
 var (
@@ -128,6 +138,8 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 
 	params.debugging = r.URL.Query().Get("debug") == "yes"
 	params.showIcons = r.URL.Query().Get("icons") == "yes"
+	params.skipCache = r.URL.Query().Get("skipcache") == "yes"
+	params.showCacheStats = r.URL.Query().Get("cachestats") == "yes"
 
 	return params, nil
 }
@@ -305,26 +317,50 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	defer cache.Close()
 
 	appEnv := os.Getenv("APP_ENV")
-	useCache := appEnv == "production" || appEnv == "test"
+	useCache := (appEnv == "production" || appEnv == "test") && !params.skipCache
 	var collections *Collections
-	var cacheHit bool
-	var cacheAge time.Duration
 
 	if useCache {
-		var created time.Time
-		var err error
-		collections, created, err = cache.Get(params.uprn)
-		if err != nil || collections == nil {
-			cacheHit = false
-			if params.debugging {
-				log.Printf("Cache miss for UPRN: %s", params.uprn)
+		_, err := func() (time.Time, error) {
+			collections, created, err := cache.Get(params.uprn)
+			if err != nil || collections == nil {
+				if params.debugging {
+					log.Printf("Cache miss for UPRN: %s", params.uprn)
+				}
+				return time.Time{}, err
 			}
+
+			if params.debugging {
+				log.Printf("Cache hit for UPRN: %s", params.uprn)
+			}
+
+			if params.showCacheStats {
+				cacheExpirySecondsStr := os.Getenv("CACHE_EXPIRY_SECONDS")
+				cacheExpirySeconds, _ := strconv.Atoi(cacheExpirySecondsStr)
+				if cacheExpirySeconds <= 0 {
+					cacheExpirySeconds = 259200 // 3 days
+				}
+
+				cacheSource := "Firestore"
+				if appEnv == "development" {
+					cacheSource = "SQLite"
+				}
+
+				collections.CacheInfo = &CacheInfo{
+					Source:    cacheSource,
+					Age:       time.Since(created).String(),
+					ExpiresIn: time.Until(created.Add(time.Duration(cacheExpirySeconds) * time.Second)).String(),
+				}
+			}
+
+			return created, nil
+		}()
+		if err != nil {
+			// Fetch from source if cache miss
 			insecure := r.URL.Query().Get("insecure") == "true"
-			var client *http.Client
+			client := HTTPClient
 			if insecure {
 				client = InsecureHTTPClient
-			} else {
-				client = HTTPClient
 			}
 			collections, err = fetchCollectionsFromSBC(ctx, client, params)
 			if err != nil {
@@ -340,23 +376,15 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
 				log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
 			}
-		} else {
-			cacheHit = true
-			cacheAge = time.Since(created)
-			if params.debugging {
-				log.Printf("Cache hit for UPRN: %s", params.uprn)
-			}
 		}
 	} else {
-		// In development, always fetch from the source
-		var err error
+		// In development or when skipcache=yes, always fetch from the source
 		insecure := r.URL.Query().Get("insecure") == "true"
-		var client *http.Client
+		client := HTTPClient
 		if insecure {
 			client = InsecureHTTPClient
-		} else {
-			client = HTTPClient
 		}
+		var err error
 		collections, err = fetchCollectionsFromSBC(ctx, client, params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
@@ -387,12 +415,6 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Cache-Control", "max-age=3600")
-	if useCache {
-		w.Header().Set("X-Mybin-Day-Data-From-Cache", strconv.FormatBool(cacheHit))
-		if cacheHit {
-			w.Header().Set("X-Mybin-Day-Data-Age-Seconds", fmt.Sprintf("%.0f", cacheAge.Seconds()))
-		}
-	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
