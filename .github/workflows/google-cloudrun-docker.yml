@@ -26,7 +26,6 @@ on:
       - main
       - dev
       - test
-  pull_request:
 
 permissions:
   contents: read
