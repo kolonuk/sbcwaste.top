@@ -124,8 +124,6 @@ type FirestoreCacheItem struct {
 func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
 	projectID := os.Getenv("PROJECT_ID")
 	if projectID == "" {
-		// In a real application, you might want to return an error here
-		// or have a more robust way of getting the project ID.
 		log.Println("PROJECT_ID environment variable not set.")
 	}
 
@@ -134,7 +132,14 @@ func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
 		return nil, err
 	}
 
-	collection := client.Collection("sbcwaste_cache")
+	appEnv := os.Getenv("APP_ENV")
+	collectionName := "sbcwaste_cache" // Default to production
+	if appEnv == "test" {
+		collectionName = "sbcwaste_cache_test"
+	}
+
+	collection := client.Collection(collectionName)
+	log.Printf("Using Firestore collection: %s", collectionName)
 
 	return &FirestoreCache{client: client, collection: collection}, nil
 }
@@ -194,8 +199,8 @@ func (c *FirestoreCache) Close() error {
 // based on the environment
 func NewCache(ctx context.Context) (Cache, error) {
 	appEnv := os.Getenv("APP_ENV")
-	if appEnv == "development" || appEnv == "test" {
-		log.Println("Using SQLite cache for local development/testing")
+	if appEnv == "development" {
+		log.Println("Using SQLite cache for local development")
 		return NewSqliteCache()
 	}
 
