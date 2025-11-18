@@ -21,11 +21,16 @@ on:
         description: 'Cache expiry in seconds'
         required: true
         default: '259200'
+  pull_request:
+    branches:
+      - "main"
+      - "dev"
+      - "test"
   push:
     branches:
-      - main
-      - dev
-      - test
+      - "main"
+      - "dev"
+      - "test"
 
 permissions:
   contents: read
@@ -78,6 +83,7 @@ jobs:
       - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
+    if: github.event_name == 'push'
     name: Build, Scan, and Push
     runs-on: ubuntu-latest
     outputs:
@@ -222,7 +228,7 @@ jobs:
     name: Deploy to Cloud Run
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Set up deployment environment
         id: set-env
