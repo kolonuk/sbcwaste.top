@@ -218,9 +218,37 @@ jobs:
             echo "✅ No CRITICAL or HIGH severity vulnerabilities found."
           fi
 
+  manage-cache:
+    name: Manage Production Cache
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    env:
+      PROJECT_ID: ${{ env.PROJECT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Get cache stats before clearing
+        run: go run ./cmd/cache-tool/main.go stats
+
+      - name: Clear production cache
+        run: go run ./cmd/cache-tool/main.go clear
+
   deploy:
     name: Deploy to Cloud Run
-    needs: build
+    needs: [build, manage-cache]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     steps:
