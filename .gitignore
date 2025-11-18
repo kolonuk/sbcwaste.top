@@ -78,3 +78,4 @@ gha-creds-*.json
 # sbcwaste files
 /sbcwaste
 sbcwaste.db
+gcp-credentials.json
