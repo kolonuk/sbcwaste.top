@@ -47,9 +47,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate HTML
-        uses: chkashyap/HTML-Validator@main
+        uses: anand-p-r/w3c-html-validator@v1
         with:
-          path: 'static'
+          html-file: './static/index.html'
+          html-file-encoding: 'UTF-8'
 
   validate-css:
     name: Validate CSS
@@ -59,19 +60,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate CSS
-        uses: Cyb3r-Jak3/css-validator-action@v1
+        uses: anand-p-r/w3c-css-validator@v1
         with:
-          file: 'static/style.css'
+          css-file: './static/style.css'
+          css-file-encoding: 'UTF-8'
 
   validate-js:
     name: Validate JavaScript
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate JavaScript
-        run: node -c static/script.js
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm install eslint
+      - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
     name: Build, Scan, and Push

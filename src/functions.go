@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -48,6 +49,40 @@ func newSafeClient() *http.Client {
 }
 
 var HTTPClient = newSafeClient()
+var InsecureHTTPClient = newInsecureSafeClient()
+
+// newInsecureSafeClient creates an http.Client that allows insecure connections.
+func newInsecureSafeClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, _, err := net.SplitHostPort(addr)
+				if err != nil {
+					// This should not happen for http/https requests, as transport adds the port.
+					// If it does, we can't safely check the host.
+					return nil, fmt.Errorf("cannot split host/port: %w", err)
+				}
+
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return nil, fmt.Errorf("dns lookup failed for %s: %w", host, err)
+				}
+
+				for _, ip := range ips {
+					if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+						return nil, fmt.Errorf("refused to connect to private/local address: %s (%s)", ip, host)
+					}
+				}
+
+				// The address is safe, proceed with the default dialer
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr)
+			},
+		},
+		Timeout: 60 * time.Second,
+	}
+}
 
 // convertImageToBase64 fetches an image from a URL and converts it to a base64 data URI string
 var convertImageToBase64URI = func(imageUrl string) (string, error) {
@@ -101,8 +136,8 @@ type AddressResponse struct {
 	Data [][]string `json:"data"`
 }
 
-var fetchAddressData = func(url string) (*AddressResponse, error) {
-	resp, err := HTTPClient.Get(url)
+var fetchAddressData = func(client *http.Client, url string) (*AddressResponse, error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get address data: %w", err)
 	}
@@ -133,13 +168,13 @@ var fetchAddressData = func(url string) (*AddressResponse, error) {
 	return &addressResponse, nil
 }
 
-func getAddressFromUPRN(uprn string, debuggingEnable bool) (string, error) {
+func getAddressFromUPRN(client *http.Client, uprn string, debuggingEnable bool) (string, error) {
 	url := "https://maps.swindon.gov.uk/getdata.aspx?callback=jQuery16406504322666596749_1721033956585&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=" + uprn + "&pagesize=13&startnum=1&gettotals=false&axuid=1721033978935&mapsource=mapsources/MyHouse&_=1721033978935"
 	if debuggingEnable {
 		log.Printf("Querying address API with URL: %s", url)
 	}
 
-	addressResponse, err := fetchAddressData(url)
+	addressResponse, err := fetchAddressData(client, url)
 	if err != nil {
 		return "", err
 	}
