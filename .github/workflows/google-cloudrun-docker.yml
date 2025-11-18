@@ -44,21 +44,26 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: html-validate/action@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate HTML
+        uses: anand-p-r/w3c-html-validator@v1
         with:
-          paths: "static/*.html"
+          html-file: './static/index.html'
+          html-file-encoding: 'UTF-8'
 
   validate-css:
     name: Validate CSS
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: MStadley/w3c-css-validator@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate CSS
+        uses: anand-p-r/w3c-css-validator@v1
         with:
-          css-file: "static/style.css"
-          level: "2"
+          css-file: './static/style.css'
+          css-file-encoding: 'UTF-8'
 
   validate-js:
     name: Validate JavaScript
@@ -70,7 +75,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install eslint
-      - run: npx eslint --configeslintrc.js static/script.js
+      - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
     name: Build, Scan, and Push
