@@ -21,6 +21,7 @@ on:
         description: 'Cache expiry in seconds'
         required: true
         default: '259200'
+  pull_request:
   push:
     branches:
       - main
@@ -222,7 +223,7 @@ jobs:
     name: Deploy to Cloud Run
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Set up deployment environment
         id: set-env

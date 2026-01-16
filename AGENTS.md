@@ -1,11 +1,36 @@
-This file contains instructions for AI agents working on this repository.
+As an AI agent, I will follow the guidelines below when working on this repository.
 
-## Agent Instructions
+## Development Cycle and Deployment Process
 
-*   **Goal:** Your primary goal is to assist users by completing coding tasks, such as solving bugs, implementing features, and writing tests.
-*   **Tools:** You have access to a variety of tools to help you accomplish your goals. Use them wisely.
-*   **Planning:** Always start by creating a solid plan. Explore the codebase, ask clarifying questions, and articulate your plan clearly.
-*   **Verification:** Always verify your work. After every action that modifies the codebase, use a read-only tool to confirm that the action was successful.
-*   **Testing:** Practice proactive testing. For any code change, attempt to find and run relevant tests. When practical, write a failing test first. Where applicable, add a Go unit test for changes.
-*   **Autonomy:** Strive to solve problems autonomously. However, don't hesitate to ask for help if you're stuck.
-*   **Communication:** Keep the user informed of your progress. Use the `message_user` tool to provide updates.
+### Workflow
+
+- **Feature Branches:** All new work should be done on feature branches. These branches are created from the `dev` branch.
+- **Pull Requests:** When a feature is complete, a pull request is created to merge the feature branch into `dev`. This triggers the CI/CD pipeline, which runs tests and security scans.
+- **Development Environment:** Once the pull request is merged into `dev`, the changes are automatically deployed to the development environment.
+- **Testing Environment:** When the `dev` branch is ready for testing, a pull request is created from `dev` to `test`. This deploys the changes to the testing environment.
+- **Production Environment:** After testing is complete, a pull request is created from `test` to `main`. Merging this pull request deploys the changes to the production environment.
+
+### Suggested Improvements
+
+- **Semantic Versioning and Changelogs:**
+  - Automatically generate a changelog and create a new release tag when a pull request is merged into `main`. This can be done using a tool like `semantic-release`. This will help you track changes and releases more effectively.
+- **Infrastructure as Code:**
+  - Use a tool like Terraform to manage your Google Cloud resources. This will allow you to version your infrastructure and make it easier to create new environments.
+- **Container Security:**
+  - Implement a container image signing process to ensure that only trusted images are deployed to your environments.
+- **Code Quality:**
+  - In addition to the existing validation jobs, consider adding a code quality tool like SonarCloud to your CI/CD pipeline. This will help you identify and fix code quality issues before they are merged into your codebase.
+- **Automated Rollbacks:**
+  - Configure your Cloud Run services to automatically roll back to the previous version if the new version fails to start. This will help you minimize downtime in the event of a bad deployment.
+- **Dependency Management:**
+  - Use a tool like Dependabot to automatically create pull requests to update your dependencies. This will help you keep your application secure and up-to-date.
+- **Environment-Specific Configurations:**
+  - Instead of using `if` conditions in your workflow to determine the environment, consider using different workflow files for each environment. This will make your workflows cleaner and easier to manage.
+- **Review Apps:**
+  - For pull requests, dynamically spin up a temporary "review app" with the changes. This allows stakeholders to test and review the changes in a live environment before they are merged.
+- **Blue/Green or Canary Deployments:**
+  - Instead of deploying directly to production, consider using a blue/green or canary deployment strategy. This will allow you to test the new version with a small subset of users before rolling it out to everyone. This can be achieved with the `--no-traffic` flag in the `gcloud run deploy` command, followed by gradually shifting traffic.
+- **DORA Metrics:**
+  - Track DORA (DevOps Research and Assessment) metrics like deployment frequency, lead time for changes, change failure rate, and time to restore service. This will help you measure and improve your DevOps performance.
+- **ChatOps:**
+  - Integrate your CI/CD pipeline with a chat tool like Slack or Microsoft Teams. This will allow you to receive notifications about your deployments and take action from within your chat client.
