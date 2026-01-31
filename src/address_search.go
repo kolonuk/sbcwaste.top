@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -20,9 +21,18 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := searchAddress(query)
+	insecure := r.URL.Query().Get("insecure") == "true"
+	var client *http.Client
+	if insecure {
+		client = InsecureHTTPClient
+	} else {
+		client = HTTPClient
+	}
+
+	results, err := searchAddress(client, query)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to search for address: %v", err), http.StatusInternalServerError)
+		log.Printf("Failed to search for address: %v", err)
+		http.Error(w, "The address lookup service is temporarily unavailable. Please try again later.", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -32,11 +42,11 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func searchAddress(query string) ([]AddressSearchResult, error) {
+func searchAddress(client *http.Client, query string) ([]AddressSearchResult, error) {
 	escapedQuery := url.QueryEscape(query)
 	url := fmt.Sprintf("https://maps.swindon.gov.uk/getdata.aspx?callback=my_callback&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=%s&pagesize=100&startnum=1&gettotals=false&axuid=1&mapsource=mapsources/MyHouse", escapedQuery)
 
-	addressResponse, err := fetchAddressData(url)
+	addressResponse, err := fetchAddressData(client, url)
 	if err != nil {
 		return nil, err
 	}

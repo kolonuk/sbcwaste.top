@@ -21,14 +21,12 @@ on:
         description: 'Cache expiry in seconds'
         required: true
         default: '259200'
+  pull_request:
   push:
     branches:
       - main
       - dev
-  pull_request:
-    branches:
-      - main
-      - dev
+      - test
 
 permissions:
   contents: read
@@ -50,9 +48,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate HTML
-        uses: chkashyap/HTML-Validator@main
+        uses: anand-p-r/w3c-html-validator@v1
         with:
-          path: 'static'
+          html-file: './static/index.html'
+          html-file-encoding: 'UTF-8'
 
   validate-css:
     name: Validate CSS
@@ -62,19 +61,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate CSS
-        uses: Cyb3r-Jak3/css-validator-action@v1
+        uses: anand-p-r/w3c-css-validator@v1
         with:
-          file: 'static/style.css'
+          css-file: './static/style.css'
+          css-file-encoding: 'UTF-8'
 
   validate-js:
     name: Validate JavaScript
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate JavaScript
-        run: node -c static/script.js
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm install eslint
+      - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
     name: Build, Scan, and Push
@@ -91,7 +93,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.11'
 
       - name: Run tests
         run: go test ./src/...
@@ -109,7 +111,7 @@ jobs:
           echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: ${{ steps.build-image.outputs.image_name }}
           format: 'table'
@@ -221,7 +223,7 @@ jobs:
     name: Deploy to Cloud Run
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Set up deployment environment
         id: set-env
@@ -234,6 +236,10 @@ jobs:
             echo "APP_ENV=dev" >> $GITHUB_ENV
             echo "SERVICE=sbcwaste-dev" >> $GITHUB_ENV
             echo "DOMAIN=dev.sbcwaste.top" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/test" ]; then
+            echo "APP_ENV=test" >> $GITHUB_ENV
+            echo "SERVICE=sbcwaste-test" >> $GITHUB_ENV
+            echo "DOMAIN=test.sbcwaste.top" >> $GITHUB_ENV
           fi
 
       - name: Authenticate to Google Cloud
@@ -312,7 +318,7 @@ jobs:
     name: Clean up old container images
     needs: deploy
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -351,10 +357,12 @@ jobs:
 
           prod_image=$(get_deployed_image_uri "sbcwaste-prod")
           dev_image=$(get_deployed_image_uri "sbcwaste-dev")
+          test_image=$(get_deployed_image_uri "sbcwaste-test")
 
           echo "Currently deployed images (canonical URI):"
           echo "Prod: ${prod_image:-'not found'}"
           echo "Dev: ${dev_image:-'not found'}"
+          echo "Test: ${test_image:-'not found'}"
 
           # Get all image URIs for the service, sorted from newest to oldest.
           all_images=$(gcloud artifacts docker images list "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}" \
@@ -373,6 +381,7 @@ jobs:
           images_to_keep_list=()
           [ -n "$prod_image" ] && images_to_keep_list+=("$prod_image")
           [ -n "$dev_image" ] && images_to_keep_list+=("$dev_image")
+          [ -n "$test_image" ] && images_to_keep_list+=("$test_image")
 
           # Add the 5 most recent images to the keep list
           images_to_keep_list+=($(echo "$all_images" | head -n 5))
