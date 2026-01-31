@@ -63,7 +63,7 @@ func BillingHandler(w http.ResponseWriter, r *http.Request) {
 
 // fetchAndMergeBillingData fetches historical data from CSV and current data from BigQuery,
 // then merges them into a single, sorted list.
-func fetchAndMergeBillingData(ctx context.Context) ([]CostData, error) {
+var fetchAndMergeBillingData = func(ctx context.Context) ([]CostData, error) {
 	// 1. Fetch historical data from CSV.
 	csvData, err := fetchBillingDataFromCSV()
 	if err != nil {
@@ -255,7 +255,10 @@ func findBillingTableName(ctx context.Context, client *bigquery.Client) (string,
 	}
 	err = it.Next(&row)
 	if err == iterator.Done {
-		return "", fmt.Errorf("no billing export table found in dataset %s", datasetID)
+		log.Printf("WARN: No billing export table found in dataset %s. Costs will not be fetched from BigQuery.", datasetID)
+		// Return a fake table name to prevent the query from failing,
+		// but this will result in zero rows.
+		return "gcp_billing_export_v1_XXXXXXXXXXXXXXXX", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("iterator.Next for table name: %v", err)

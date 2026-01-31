@@ -1,9 +1,0 @@
-# security.txt
-# See https://www.securitytxt.org/
-
-# Our security policy
-Contact: mailto:security@example.com
-
-# Our PGP key
-# Canonical: https://example.com/.well-known/security.txt
-Canonical: https://sbcwaste.top/.well-known/security.txt

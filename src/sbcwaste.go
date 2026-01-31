@@ -31,7 +31,7 @@ import (
 type Collection struct {
 	Type            string   `json:"type" xml:"type" yaml:"type"`
 	CollectionDates []string `json:"CollectionDates" xml:"CollectionDates" yaml:"CollectionDates"`
-	IconURL         string   `json:"iconURL" xml:"iconURL" yaml:"iconURL"`
+	IconURL         string   `json:"iconURL,omitempty" xml:"iconURL,omitempty" yaml:"iconURL,omitempty"`
 	IconDataURI     string   `json:"iconDataURI,omitempty" xml:"iconDataURI,omitempty" yaml:"iconDataURI,omitempty"`
 }
 
@@ -40,13 +40,23 @@ type Collections struct {
 	XMLName     xml.Name     `json:"-" xml:"collections" yaml:"-"`
 	Collections []Collection `json:"collections" xml:"collection" yaml:"collections"`
 	Address     string       `json:"address" xml:"address" yaml:"address"`
+	CacheInfo   *CacheInfo   `json:"cacheInfo,omitempty" xml:"cacheInfo,omitempty" yaml:"cacheInfo,omitempty"`
+}
+
+// CacheInfo holds statistics about the cache
+type CacheInfo struct {
+	Source      string `json:"source" xml:"source" yaml:"source"`
+	Age         string `json:"age" xml:"age" yaml:"age"`
+	ExpiresIn   string `json:"expiresIn" xml:"expiresIn" yaml:"expiresIn"`
 }
 
 type requestParams struct {
-	uprn      string
-	output    string
-	debugging bool
-	showIcons bool
+	uprn         string
+	output       string
+	debugging    bool
+	showIcons    bool
+	skipCache    bool
+	showCacheStats bool
 }
 
 var (
@@ -128,18 +138,20 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 
 	params.debugging = r.URL.Query().Get("debug") == "yes"
 	params.showIcons = r.URL.Query().Get("icons") == "yes"
+	params.skipCache = r.URL.Query().Get("skipcache") == "yes"
+	params.showCacheStats = r.URL.Query().Get("cachestats") == "yes"
 
 	return params, nil
 }
 
 // fetchCollectionsFromSBC fetches waste collection data from the SBC website using HTTP requests.
-var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (*Collections, error) {
+var fetchCollectionsFromSBC = func(ctx context.Context, client *http.Client, params *requestParams) (*Collections, error) {
 	if params.debugging {
 		log.Printf("Fetching URL: https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=%s&uprnSubmit=Yes", params.uprn)
 	}
 
 	// Create a new HTTP client with a timeout
-	client := &http.Client{
+	sbcClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList="+params.uprn+"&uprnSubmit=Yes", nil)
@@ -147,7 +159,7 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	res, err := client.Do(req)
+	res, err := sbcClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -167,7 +179,7 @@ var fetchCollectionsFromSBC = func(ctx context.Context, params *requestParams) (
 		return nil, err
 	}
 
-	address, err := getAddressFromUPRN(params.uprn, params.debugging)
+	address, err := getAddressFromUPRN(client, params.uprn, params.debugging)
 	if err != nil {
 		log.Printf("Failed to get address from UPRN: %v\n", err)
 	} else {
@@ -305,21 +317,52 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	defer cache.Close()
 
 	appEnv := os.Getenv("APP_ENV")
-	useCache := appEnv == "production" || appEnv == "test"
+	useCache := (appEnv == "production" || appEnv == "test") && !params.skipCache
 	var collections *Collections
-	var cacheHit bool
-	var cacheAge time.Duration
 
 	if useCache {
-		var created time.Time
-		var err error
-		collections, created, err = cache.Get(params.uprn)
-		if err != nil || collections == nil {
-			cacheHit = false
-			if params.debugging {
-				log.Printf("Cache miss for UPRN: %s", params.uprn)
+		_, err := func() (time.Time, error) {
+			collections, created, err := cache.Get(params.uprn)
+			if err != nil || collections == nil {
+				if params.debugging {
+					log.Printf("Cache miss for UPRN: %s", params.uprn)
+				}
+				return time.Time{}, err
 			}
-			collections, err = fetchCollectionsFromSBC(ctx, params)
+
+			if params.debugging {
+				log.Printf("Cache hit for UPRN: %s", params.uprn)
+			}
+
+			if params.showCacheStats {
+				cacheExpirySecondsStr := os.Getenv("CACHE_EXPIRY_SECONDS")
+				cacheExpirySeconds, _ := strconv.Atoi(cacheExpirySecondsStr)
+				if cacheExpirySeconds <= 0 {
+					cacheExpirySeconds = 259200 // 3 days
+				}
+
+				cacheSource := "Firestore"
+				if appEnv == "development" {
+					cacheSource = "SQLite"
+				}
+
+				collections.CacheInfo = &CacheInfo{
+					Source:    cacheSource,
+					Age:       time.Since(created).String(),
+					ExpiresIn: time.Until(created.Add(time.Duration(cacheExpirySeconds) * time.Second)).String(),
+				}
+			}
+
+			return created, nil
+		}()
+		if err != nil {
+			// Fetch from source if cache miss
+			insecure := r.URL.Query().Get("insecure") == "true"
+			client := HTTPClient
+			if insecure {
+				client = InsecureHTTPClient
+			}
+			collections, err = fetchCollectionsFromSBC(ctx, client, params)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
 				return
@@ -333,17 +376,16 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
 				log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
 			}
-		} else {
-			cacheHit = true
-			cacheAge = time.Since(created)
-			if params.debugging {
-				log.Printf("Cache hit for UPRN: %s", params.uprn)
-			}
 		}
 	} else {
-		// In development, always fetch from the source
+		// In development or when skipcache=yes, always fetch from the source
+		insecure := r.URL.Query().Get("insecure") == "true"
+		client := HTTPClient
+		if insecure {
+			client = InsecureHTTPClient
+		}
 		var err error
-		collections, err = fetchCollectionsFromSBC(ctx, params)
+		collections, err = fetchCollectionsFromSBC(ctx, client, params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
 			return
@@ -373,12 +415,6 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Cache-Control", "max-age=3600")
-	if useCache {
-		w.Header().Set("X-Mybin-Day-Data-From-Cache", strconv.FormatBool(cacheHit))
-		if cacheHit {
-			w.Header().Set("X-Mybin-Day-Data-Age-Seconds", fmt.Sprintf("%.0f", cacheAge.Seconds()))
-		}
-	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
@@ -453,10 +489,14 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		chromedpContext, cancel = chromedp.NewContext(allocCtx)
 	})
 
+	// Create a new context with a 30-second timeout.
+	ctx, cancel := context.WithTimeout(chromedpContext, 30*time.Second)
+	defer cancel()
+
 	var iconURLs map[string]string
 	url := "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList=" + params.uprn + "&uprnSubmit=Yes"
 
-	err := chromedp.Run(chromedpContext,
+	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible("div.bin-collection-container", chromedp.ByQuery),
 		chromedp.Evaluate(`(function() {
