@@ -269,21 +269,6 @@ jobs:
             PROJECT_ID=${{ env.PROJECT_ID }}
             CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
 
-      - name: Verify DNS
-        run: |
-          echo "Verifying DNS for ${{ env.DOMAIN }}..."
-          for i in {1..10}; do
-            cname=$(dig +short ${{ env.DOMAIN }} CNAME)
-            if [ "$cname" == "ghs.googlehosted.com." ]; then
-              echo "DNS verification successful."
-              exit 0
-            fi
-            echo "Attempt $i: DNS not yet propagated. Waiting 30 seconds..."
-            sleep 30
-          done
-          echo "DNS verification failed after several attempts."
-          exit 1
-
       - name: Verify Application Health
         run: |
           echo "Verifying application health for https://${{ env.DOMAIN }}"
