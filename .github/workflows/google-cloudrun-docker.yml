@@ -79,7 +79,7 @@ jobs:
       - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
-    name: Build, Scan, and Push
+    name: Build and Scan
     runs-on: ubuntu-latest
     outputs:
       image_name: ${{ steps.build-image.outputs.image_name }}
@@ -123,6 +123,12 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+
+  push:
+    name: Push and Scan in Artifact Registry
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
 
       - name: Authenticate to Google Cloud
         if: github.event_name == 'push'
@@ -225,7 +231,7 @@ jobs:
 
   deploy:
     name: Deploy to Cloud Run
-    needs: build
+    needs: push
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
