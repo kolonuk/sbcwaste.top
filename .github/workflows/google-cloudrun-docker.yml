@@ -147,12 +147,12 @@ jobs:
 
       - name: Push Docker image
         if: github.event_name == 'push'
-        run: docker push ${{ steps.build-image.outputs.image_name }}
+        run: docker push  ${{ needs.build.outputs.image_name }}
 
       - name: Check for vulnerabilities in Artifact Registry
         if: github.event_name == 'push'
         run: |
-          IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
+          IMAGE_WITH_TAG="${{ needs.build.outputs.image_name }}"
           IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
 
           echo "Image with tag: ${IMAGE_WITH_TAG}"
