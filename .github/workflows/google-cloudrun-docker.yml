@@ -79,7 +79,7 @@ jobs:
       - run: npx eslint --config .eslintrc.js static/script.js
 
   build:
-    name: Build and Scan
+    name: Build, Scan, and Push
     runs-on: ubuntu-latest
     outputs:
       image_name: ${{ steps.build-image.outputs.image_name }}
@@ -124,12 +124,6 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-  push:
-    name: Push and Scan in Artifact Registry
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-
       - name: Authenticate to Google Cloud
         if: github.event_name == 'push'
         uses: google-github-actions/auth@v2
@@ -147,12 +141,12 @@ jobs:
 
       - name: Push Docker image
         if: github.event_name == 'push'
-        run: docker push  ${{ needs.build.outputs.image_name }}
+        run: docker push ${{ steps.build-image.outputs.image_name }}
 
       - name: Check for vulnerabilities in Artifact Registry
         if: github.event_name == 'push'
         run: |
-          IMAGE_WITH_TAG="${{ needs.build.outputs.image_name }}"
+          IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
           IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
 
           echo "Image with tag: ${IMAGE_WITH_TAG}"
@@ -231,7 +225,7 @@ jobs:
 
   deploy:
     name: Deploy to Cloud Run
-    needs: push
+    needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
