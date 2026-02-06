@@ -1,5 +1,11 @@
 As an AI agent, I will follow the guidelines below when working on this repository.
 
+## Research and Investigation
+
+When researching issues or making changes, always perform the following security checks:
+- **Go Vulnerabilities:** Run `govulncheck ./...` (or `./src/...`) to identify Go-specific vulnerabilities.
+- **General Vulnerabilities:** Run `trivy fs .` to scan the entire filesystem for security issues.
+
 ## Development Cycle and Deployment Process
 
 ### Workflow
