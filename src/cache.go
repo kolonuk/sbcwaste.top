@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
+	"encoding/hex"
 	"log"
 	"os"
 	"strings"
@@ -14,10 +15,18 @@ import (
 )
 
 // Cache interface defines the methods for a cache
+// It now stores raw bytes to be more generic.
 type Cache interface {
-	Get(key string) (*Collections, time.Time, error)
-	Set(key string, collections *Collections, expiration time.Duration) error
+	Get(key string) ([]byte, time.Time, error)
+	Set(key string, value []byte, expiration time.Duration) error
 	Close() error
+}
+
+// hashKey creates a SHA256 hash of the key.
+// This is important for Firestore which cannot accept "/" in document IDs (e.g. URLs).
+func hashKey(key string) string {
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
 }
 
 // SqliteCache is a cache implementation using SQLite
@@ -56,8 +65,14 @@ func NewSqliteCache() (*SqliteCache, error) {
 }
 
 // Get retrieves a value from the SQLite cache
-func (c *SqliteCache) Get(key string) (*Collections, time.Time, error) {
-	row := c.db.QueryRow("SELECT value, expiration, created FROM cache WHERE key = ?", key)
+func (c *SqliteCache) Get(key string) ([]byte, time.Time, error) {
+	hashedKey := hashKey(key)
+	// We might have legacy unhashed keys in the DB if this is an existing file,
+	// but for simplicity/robustness going forward we only look up by hash.
+	// If backward compatibility with non-hashed keys was strictly required we'd check both,
+	// but user approved the plan implying new keys.
+
+	row := c.db.QueryRow("SELECT value, expiration, created FROM cache WHERE key = ?", hashedKey)
 
 	var value string
 	var expiration int64
@@ -69,35 +84,25 @@ func (c *SqliteCache) Get(key string) (*Collections, time.Time, error) {
 
 	if time.Now().Unix() > expiration {
 		// Cache expired
-		if _, err := c.db.Exec("DELETE FROM cache WHERE key = ?", key); err != nil {
-			log.Printf("Failed to delete expired cache entry for key %s: %v", key, err)
+		if _, err := c.db.Exec("DELETE FROM cache WHERE key = ?", hashedKey); err != nil {
+			log.Printf("Failed to delete expired cache entry for key %s (hash: %s): %v", key, hashedKey, err)
 		}
 		return nil, time.Time{}, nil
 	}
 
-	var collections Collections
-	err = json.Unmarshal([]byte(value), &collections)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-
-	return &collections, time.Unix(created, 0), nil
+	return []byte(value), time.Unix(created, 0), nil
 }
 
 // Set adds a value to the SQLite cache
-func (c *SqliteCache) Set(key string, collections *Collections, expiration time.Duration) error {
-	value, err := json.Marshal(collections)
-	if err != nil {
-		return err
-	}
-
+func (c *SqliteCache) Set(key string, value []byte, expiration time.Duration) error {
+	hashedKey := hashKey(key)
 	now := time.Now()
 	expirationTime := now.Add(expiration).Unix()
 	createdTime := now.Unix()
 
-	_, err = c.db.Exec(
+	_, err := c.db.Exec(
 		"INSERT OR REPLACE INTO cache (key, value, expiration, created) VALUES (?, ?, ?, ?)",
-		key, string(value), expirationTime, createdTime,
+		hashedKey, string(value), expirationTime, createdTime,
 	)
 	return err
 }
@@ -145,8 +150,9 @@ func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
 }
 
 // Get retrieves a value from the Firestore cache
-func (c *FirestoreCache) Get(key string) (*Collections, time.Time, error) {
-	doc, err := c.collection.Doc(key).Get(context.Background())
+func (c *FirestoreCache) Get(key string) ([]byte, time.Time, error) {
+	hashedKey := hashKey(key)
+	doc, err := c.collection.Doc(hashedKey).Get(context.Background())
 	if err != nil {
 		// This will handle the case where the document doesn't exist (cache miss)
 		return nil, time.Time{}, nil
@@ -159,34 +165,25 @@ func (c *FirestoreCache) Get(key string) (*Collections, time.Time, error) {
 
 	if time.Now().After(item.Expiration) {
 		// Cache expired, delete the document
-		_, _ = c.collection.Doc(key).Delete(context.Background())
+		_, _ = c.collection.Doc(hashedKey).Delete(context.Background())
 		return nil, time.Time{}, nil
 	}
 
-	var collections Collections
-	err = json.Unmarshal([]byte(item.Value), &collections)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-
-	return &collections, item.Created, nil
+	// Assuming the value stored is just the string representation of bytes (e.g. JSON or whatever)
+	return []byte(item.Value), item.Created, nil
 }
 
 // Set adds a value to the Firestore cache
-func (c *FirestoreCache) Set(key string, collections *Collections, expiration time.Duration) error {
-	val, err := json.Marshal(collections)
-	if err != nil {
-		return err
-	}
-
+func (c *FirestoreCache) Set(key string, value []byte, expiration time.Duration) error {
+	hashedKey := hashKey(key)
 	now := time.Now()
 	item := FirestoreCacheItem{
-		Value:      string(val),
+		Value:      string(value),
 		Expiration: now.Add(expiration),
 		Created:    now,
 	}
 
-	_, err = c.collection.Doc(key).Set(context.Background(), item)
+	_, err := c.collection.Doc(hashedKey).Set(context.Background(), item)
 	return err
 }
 
