@@ -21,7 +21,7 @@ on:
         description: 'Cache expiry in seconds'
         required: true
         default: '259200'
-  pull_request:
+  pull_request: {}
   push:
     branches:
       - main
