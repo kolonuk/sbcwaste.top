@@ -163,10 +163,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        id: auth
         uses: google-github-actions/auth@v2
         with:
-          token_format: 'access_token'
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
@@ -176,11 +174,26 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
 
+      - name: Pull Docker image
+        run: |
+          echo "Pulling image: ${{ needs.build.outputs.image_name }}"
+          docker pull ${{ needs.build.outputs.image_name }}
+
+      - name: Verify image availability or auth token
+        run: |
+          set -euo pipefail
+          IMAGE="${{ needs.build.outputs.image_name }}"
+          echo "Checking for local image: ${IMAGE}"
+          if docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "Local image found. Proceeding to scan locally."
+            exit 0
+          fi
+
+          echo "ERROR: No local image available. Docker pull must succeed for local scan." >&2
+          echo "Ensure the 'build' job pushed the image and 'docker pull' succeeded." >&2
+          exit 1
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@0.20.0
-        env:
-          TRIVY_USERNAME: 'oauth2accesstoken'
-          TRIVY_PASSWORD: ${{ steps.auth.outputs.access_token }}
         with:
           image-ref: ${{ needs.build.outputs.image_name }}
           format: 'table'
