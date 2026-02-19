@@ -40,31 +40,18 @@ env:
   REGION: europe-west1
 
 jobs:
-  validate-html:
-    name: Validate HTML
+  validate-static:
+    name: Validate Static Assets (HTML/CSS)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Validate HTML
-        uses: anand-p-r/w3c-html-validator@v1
+      - name: Validate HTML and CSS
+        uses: Cyb3r-Jak3/html5validator-action@v7.2.0
         with:
-          html-file: './static/index.html'
-          html-file-encoding: 'UTF-8'
-
-  validate-css:
-    name: Validate CSS
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate CSS
-        uses: anand-p-r/w3c-css-validator@v1
-        with:
-          css-file: './static/style.css'
-          css-file-encoding: 'UTF-8'
+          css: true
+          root: './static'
 
   validate-js:
     name: Validate JavaScript
@@ -75,39 +62,54 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '20'
-      - run: npm install eslint
-      - run: npx eslint --config .eslintrc.js static/script.js
+      - run: npm install eslint @eslint/js globals
+      - run: npx eslint static/script.js
 
-  build:
-    name: Build, Scan, and Push
+  unit-tests:
+    name: Run Unit Tests
     runs-on: ubuntu-latest
-    outputs:
-      image_name: ${{ steps.build-image.outputs.image_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24.13'
-
       - name: Run tests
         run: go test -v ./src/...
 
+  gosec:
+    name: Run Gosec Security Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
           args: './src/...'
 
+  govulncheck:
+    name: Run govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.13'
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           $(go env GOPATH)/bin/govulncheck ./src/...
 
+  trivy-fs:
+    name: Scan code for vulnerabilities (Trivy FS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Scan code for vulnerabilities
         uses: aquasecurity/trivy-action@0.20.0
         with:
@@ -117,21 +119,21 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
+  build:
+    name: Build and Push Image
+    needs: [unit-tests, gosec, govulncheck, trivy-fs]
+    runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.build-image.outputs.image_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build Docker image
         id: build-image
         run: |
           docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
           echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
-
-      - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ steps.build-image.outputs.image_name }}
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
 
       - name: Authenticate to Google Cloud
         if: github.event_name == 'push'
@@ -152,10 +154,41 @@ jobs:
         if: github.event_name == 'push'
         run: docker push ${{ steps.build-image.outputs.image_name }}
 
-      - name: Check for vulnerabilities in Artifact Registry
-        if: github.event_name == 'push'
+  trivy-image-scan:
+    name: Scan image for vulnerabilities (Trivy Image)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_name }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  gcp-vulnerability-check:
+    name: Check for vulnerabilities in Artifact Registry
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Poll for scan results
         run: |
-          IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
+          IMAGE_WITH_TAG="${{ needs.build.outputs.image_name }}"
           IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
 
           echo "Image with tag: ${IMAGE_WITH_TAG}"
@@ -234,7 +267,7 @@ jobs:
 
   deploy:
     name: Deploy to Cloud Run
-    needs: build
+    needs: [build, trivy-image-scan, gcp-vulnerability-check]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
