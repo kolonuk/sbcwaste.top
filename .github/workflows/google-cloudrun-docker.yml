@@ -179,6 +179,7 @@ jobs:
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@0.20.0
         env:
+          TRIVY_USERNAME: 'oauth2accesstoken'
           TRIVY_PASSWORD: ${{ steps.auth.outputs.access_token }}
         with:
           image-ref: ${{ needs.build.outputs.image_name }}
