@@ -65,9 +65,8 @@ func main() {
 
 func rootHandler(fileServer http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Serve static files if they exist
-		_, err := os.Stat("static" + r.URL.Path)
-		if r.URL.Path == "/" || (r.URL.Path != "/" && !os.IsNotExist(err)) {
+		// Serve the root path using the static file server
+		if r.URL.Path == "/" {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
