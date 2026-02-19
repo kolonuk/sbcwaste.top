@@ -11,7 +11,9 @@ When researching issues or making changes, always perform the following security
 ### Workflow
 
 - **Feature Branches:** All new work should be done on feature branches. These branches are created from the `dev` branch.
+  - **Important:** Even for AI agent work (including VS Code Copilot agent chats), prefer creating feature branches and submitting pull requests instead of committing directly to `dev`. This ensures all changes go through the CI/CD pipeline with tests and security scans before merging.
 - **Pull Requests:** When a feature is complete, a pull request is created to merge the feature branch into `dev`. This triggers the CI/CD pipeline, which runs tests and security scans.
+  - All code changes, regardless of source, must be submitted via PR to benefit from automated testing and review workflows.
 - **Development Environment:** Once the pull request is merged into `dev`, the changes are automatically deployed to the development environment.
 - **Testing Environment:** When the `dev` branch is ready for testing, a pull request is created from `dev` to `test`. This deploys the changes to the testing environment.
 - **Production Environment:** After testing is complete, a pull request is created from `test` to `main`. Merging this pull request deploys the changes to the production environment.
