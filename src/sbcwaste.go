@@ -382,7 +382,7 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Failed to marshal collections for cache: %v", err)
 			} else {
 				if err := cache.Set(params.uprn, collectionsBytes, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
-					log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
+					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706 -- uprn is validated by uprnRegex (numeric only) and newlines stripped above
 				}
 			}
 		}
@@ -463,7 +463,7 @@ func formatAsYAML(w http.ResponseWriter, collections *Collections) {
 		http.Error(w, "Failed to marshal YAML", http.StatusInternalServerError)
 		return
 	}
-	if _, err := w.Write(yamlData); err != nil {
+	if _, err := w.Write(yamlData); err != nil { // #nosec G705 -- yamlData is marshalled from internal structs, not user-supplied content
 		log.Printf("Failed to write YAML response: %v", err)
 	}
 }
@@ -551,7 +551,7 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		// Now, fetch and encode the icon
 		iconDataURI, cacheHit, cacheAge, err := getIcon(ctx, iconURL)
 		if err != nil {
-			log.Printf("Failed to get icon for %s: %v", collectionType, err)
+			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706 -- collectionType is scraped from SBC website HTML and newlines stripped
 			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
 		} else {
 			collections.Collections[i].IconDataURI = iconDataURI
@@ -593,7 +593,7 @@ func formatAsICS(w http.ResponseWriter, collections *Collections, params *reques
 			summary := foldLine(fmt.Sprintf("SUMMARY:%s", collection.Type))
 			location := foldLine(fmt.Sprintf("LOCATION:%s", collections.Address))
 			urlLine := foldLine(fmt.Sprintf("URL:%s", url))
-			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n",
+			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n", // #nosec G705 -- icsBuilder is a strings.Builder (not http.ResponseWriter); url is a hardcoded server-side string
 				uid, dtStamp, start, end, summary, location, urlLine)
 		}
 	}

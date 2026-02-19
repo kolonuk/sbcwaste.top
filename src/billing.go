@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -174,7 +175,7 @@ func fetchBillingDataFromCSV() ([]CostData, error) {
 
 		cost, err := strconv.ParseFloat(record[totalCostIndex], 64)
 		if err != nil {
-			log.Printf("Skipping record with invalid cost: %v", record)
+			log.Printf("Skipping record with invalid cost: %s", strings.ReplaceAll(fmt.Sprintf("%v", record), "\n", "")) // #nosec G706 -- CSV record printed for diagnostics, newlines stripped
 			continue
 		}
 

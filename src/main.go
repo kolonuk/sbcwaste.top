@@ -9,7 +9,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
 	// _ "net/http/pprof"
 )
 
@@ -56,12 +55,11 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Printf("Starting server on port %s", port)
+	log.Printf("Starting server on port %s", strings.ReplaceAll(port, "\n", "")) // #nosec G706 -- port is from env var, numeric-only after defaulting, newlines stripped
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("http.ListenAndServe: %v\n", err)
 	}
 }
-
 
 func rootHandler(fileServer http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

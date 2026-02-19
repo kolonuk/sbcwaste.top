@@ -171,7 +171,7 @@ var fetchAddressData = func(client *http.Client, url string) (*AddressResponse, 
 func getAddressFromUPRN(client *http.Client, uprn string, debuggingEnable bool) (string, error) {
 	url := "https://maps.swindon.gov.uk/getdata.aspx?callback=jQuery16406504322666596749_1721033956585&type=jsonp&service=LocationSearch&RequestType=LocationSearch&location=" + uprn + "&pagesize=13&startnum=1&gettotals=false&axuid=1721033978935&mapsource=mapsources/MyHouse&_=1721033978935"
 	if debuggingEnable {
-		log.Printf("Querying address API with URL: %s", url)
+		log.Printf("Querying address API with URL: %s", strings.ReplaceAll(url, "\n", "")) // #nosec G706 -- url built from regex-validated UPRN and hardcoded base, newlines stripped
 	}
 
 	addressResponse, err := fetchAddressData(client, url)
