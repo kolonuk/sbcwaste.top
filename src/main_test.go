@@ -83,41 +83,21 @@ func TestRootHandler(t *testing.T) {
 		t.Error("rootHandler did not delegate to fileServer for '/' path")
 	}
 
-	// Test Case 2: Non-existent file path should be handled by WasteCollection
-	// We assume "non-existent-file" does not exist in the "static" directory
-	reqWaste, _ := http.NewRequest("GET", "/non-existent-file", nil)
+	// Test Case 2: UPRN path should be handled by WasteCollection, not fileServer
+	reqWaste, _ := http.NewRequest("GET", "/1234567890", nil)
 	rrWaste := httptest.NewRecorder()
 	handler.ServeHTTP(rrWaste, reqWaste)
 
-	// WasteCollection (mocked via its behavior in rootHandler)
-	// Since WasteCollection writes output directly, we check for its signature.
-	// But wait, rootHandler calls WasteCollection directly.
-	// WasteCollection checks for UPRN or shows help.
-	// For "/non-existent-file", parseRequestParams treats it as UPRN "non-existent-file"?
-	// parseRequestParams splits by /. [0] = "non-existent-file".
-	// It validates UPRN regex. "non-existent-file" fails regex.
-	// So WasteCollection normally returns 400 Bad Request: "invalid UPRN format".
-	// Or "UPRN not provided" if empty.
-
-	if rrWaste.Code == http.StatusOK && rrWaste.Header().Get("X-Mock-Server") == "called" {
-		t.Error("rootHandler incorrectly delegated to fileServer for non-existent file")
+	if rrWaste.Header().Get("X-Mock-Server") == "called" {
+		t.Error("rootHandler should not call fileServer for UPRN paths")
 	}
 
-	// We expect WasteCollection to be called.
-	// "non-existent-file" is not a valid UPRN, so WasteCollection should return 400.
-	// Or the help page if UPRN not provided (but here it is parsed as UPRN).
-	// Let's check if the body contains "invalid UPRN format" (from WasteCollection -> parseRequestParams)
-	// OR "UPRN not provided"
-	// Actually, if I pass "/1234567890", it's a valid UPRN and should call WasteCollection logic.
-	// But I want a path that doesn't exist AND is not a UPRN?
-	// If I use a valid UPRN as path: "/1234567890"
-	// stat("static/1234567890") -> err
-	// rootHandler -> WasteCollection
-	// WasteCollection -> parseRequestParams -> UPRN="1234567890".
-	// Fetch/Cache -> returns data.
+	// Test Case 3: Static file path should be served by fileServer
+	reqStatic, _ := http.NewRequest("GET", "/style.css", nil)
+	rrStatic := httptest.NewRecorder()
+	handler.ServeHTTP(rrStatic, reqStatic)
 
-	// Let's rely on the fact that mockFileServer is NOT called.
-	if rrWaste.Header().Get("X-Mock-Server") == "called" {
-		t.Error("rootHandler should not call fileServer for missing files")
+	if rrStatic.Header().Get("X-Mock-Server") != "called" {
+		t.Error("rootHandler did not delegate to fileServer for static file path")
 	}
 }
