@@ -6,6 +6,15 @@ When researching issues or making changes, always perform the following security
 - **Go Vulnerabilities:** Run `govulncheck ./...` (or `./src/...`) to identify Go-specific vulnerabilities.
 - **General Vulnerabilities:** Run `trivy fs .` to scan the entire filesystem for security issues.
 
+### Version Changes
+
+**Before changing any version numbers** (Go version, dependencies, actions, etc.), always:
+1. Check for security vulnerabilities in the new version
+2. Verify compatibility with existing codebase
+3. Test the change in a feature branch first
+4. Ensure CI/CD pipeline passes with the new version
+5. Review changelog/release notes for breaking changes
+
 ## Development Cycle and Deployment Process
 
 ### Workflow
