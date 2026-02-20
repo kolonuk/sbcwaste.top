@@ -73,44 +73,35 @@ jobs:
   unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
+    container: golang:1.24
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
       - name: Run tests
         run: go test -v ./src/...
 
   gosec:
     name: Run Gosec Security Scanner
     runs-on: ubuntu-latest
+    container: golang:1.24
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+      - name: Install Gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@v2.20.0
-        with:
-          args: './src/...'
+        run: $(go env GOPATH)/bin/gosec ./src/...
 
   govulncheck:
     name: Run govulncheck
     runs-on: ubuntu-latest
+    container: golang:1.24
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
