@@ -162,6 +162,7 @@ jobs:
     name: Scan image for vulnerabilities (Trivy Image)
     needs: build
     runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
