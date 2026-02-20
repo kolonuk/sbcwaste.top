@@ -162,24 +162,31 @@ jobs:
     name: Scan image for vulnerabilities (Trivy Image)
     needs: build
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build Docker image locally (for PRs)
+        if: github.event_name == 'pull_request'
+        run: docker build -t ${{ needs.build.outputs.image_name }} .
+
       - name: Authenticate to Google Cloud
+        if: github.event_name != 'pull_request'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
+        if: github.event_name != 'pull_request'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker
+        if: github.event_name != 'pull_request'
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
 
       - name: Pull Docker image
+        if: github.event_name != 'pull_request'
         run: |
           echo "Pulling image: ${{ needs.build.outputs.image_name }}"
           docker pull ${{ needs.build.outputs.image_name }}
