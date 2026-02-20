@@ -34,7 +34,6 @@ ENV PORT 8080
 
 # Expose the port the app runs on
 EXPOSE 8080
- 1
 
 # Command to run the binary
 CMD ["/sbcwaste"]
