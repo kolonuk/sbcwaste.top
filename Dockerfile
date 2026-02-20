@@ -1,5 +1,5 @@
 # Use the official Go image to build the Go program
-FROM golang:1.22.2 AS builder
+FROM golang:1.24.13 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -8,44 +8,40 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source code
-COPY . .
+# Copy the source code
+COPY src/ .
 
 # Build the Go program with static link for smaller size and no libc dependencies
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
-# Use a distroless base image for security and a smaller footprint
-FROM debian:bullseye-slim
+# Use a slim base image
+FROM debian:bookworm-slim
 
-# Install necessary dependencies for Chrome/Chromium
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libgdk-pixbuf2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libx11-xcb1 \
-    lsb-release \
-    wget \
-    xdg-utils \
-    chromium \
-    chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+# Update the base image to include the latest security patches and CA certificates
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste /
+
+# Copy the static assets
+COPY static /static
 
 # Set the environment variable for the port. Cloud Run will set this value.
 ENV PORT 8080
 
 # Expose the port the app runs on
 EXPOSE 8080
+
+# Run as a non-root user for security
+USER nobody
+
+# Health check hitting the /health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -qO- http://localhost:${PORT}/health || exit 1
 
 # Command to run the binary
 CMD ["/sbcwaste"]

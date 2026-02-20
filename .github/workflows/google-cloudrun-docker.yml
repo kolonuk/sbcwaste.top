@@ -1,48 +1,18 @@
-# This workflow build and push a Docker container to Google Artifact Registry and deploy it on Cloud Run when a commit is pushed to the "main" or "dev" branch
+# This workflow builds and deploys a Go application to Google Cloud Run.
 #
-# Overview:
+# To use this workflow, you must set up the following secrets in your GitHub repository:
 #
-# 1. Authenticate to Google Cloud
-# 2. Authenticate Docker to Artifact Registry
-# 3. Build a docker container
-# 4. Publish it to Google Artifact Registry
-# 5. Deploy it to Cloud Run
+# - WIF_PROVIDER: The full identifier of the Workload Identity Provider.
+#   (e.g., projects/123456789/locations/global/workloadIdentityPools/github/providers/my-repo)
 #
-# To configure this workflow:
+# - WIF_SERVICE_ACCOUNT: The email address of the service account to use.
+#   (e.g., sbcwaste@sbcwaste.iam.gserviceaccount.com)
 #
-# 1. Ensure the required Google Cloud APIs are enabled:
-#
-#    Cloud Run            run.googleapis.com
-#    Artifact Registry    artifactregistry.googleapis.com
-#
-# 2. Create and configure Workload Identity Federation for GitHub (https://github.com/google-github-actions/auth#setting-up-workload-identity-federation)
-#
-# 3. Ensure the required IAM permissions are granted
-#
-#    Cloud Run
-#      roles/run.admin
-#      roles/iam.serviceAccountUser     (to act as the Cloud Run runtime service account)
-#
-#    Artifact Registry
-#      roles/artifactregistry.admin     (project or repository level)
-#
-#    NOTE: You should always follow the principle of least privilege when assigning IAM roles
-#
-# 4. Create GitHub secrets for WIF_PROVIDER and WIF_SERVICE_ACCOUNT
-#
-# 5. Change the values for the GAR_LOCATION, and REGION environment variables (below).
-#
-# NOTE: To use Google Container Registry instead, replace ${{ env.GAR_LOCATION }}-docker.pkg.dev with gcr.io
-#
-# For more support on how to run this workflow, please visit https://github.com/marketplace/actions/deploy-to-cloud-run
-#
-# Further reading:
-#   Cloud Run IAM permissions                 - https://cloud.google.com/run/docs/deploying
-#   Artifact Registry IAM permissions         - https://cloud.google.com/artifact-registry/docs/access-control#roles
-#   Container Registry vs Artifact Registry   - https://cloud.google.com/blog/products/application-development/understanding-artifact-registry-vs-container-registry
-#   Principle of least privilege              - https://cloud.google.com/blog/products/identity-security/dont-get-pwned-practicing-the-principle-of-least-privilege
+# Note: The `scripts/deploy-githubactions.sh` script can be used to set up the
+#       necessary Google Cloud resources and will output the values for
+#       WIF_PROVIDER and WIF_SERVICE_ACCOUNT.
 
-name: Build and Deploy to Cloud Run
+name: Build and Deploy to Google Cloud Run
 
 on:
   workflow_dispatch:
@@ -51,80 +21,460 @@ on:
         description: 'Cache expiry in seconds'
         required: true
         default: '259200'
+  pull_request:
+    branches:
+      - main
+      - dev
+      - test
+    types: [opened, synchronize, reopened]
   push:
-    branches: [ "main", "dev" ]
+    branches:
+      - main
+      - dev
+      - test
+
+permissions:
+  contents: read
+  id-token: write
 
 env:
-  PROJECT_ID: sbcwaste #YOUR_PROJECT_ID # TODO: update Google Cloud project id
-  GAR_LOCATION: europe-west1 #YOUR_GAR_LOCATION # TODO: update Artifact Registry location
-  REGION: europe-west1 #YOUR_SERVICE_REGION # TODO: update Cloud Run service region
+  PROJECT_ID: sbcwaste
+  GAR_LOCATION: europe-west1
   REPO: eu-docker-repo
-  DEBUG: 'false'
+  IMAGE: sbcwaste
+  REGION: europe-west1
 
 jobs:
-  deploy:
-    # Add 'id-token' with the intended permissions for workload identity federation
-    permissions:
-      contents: 'read'
-      id-token: 'write'
+  validate-static:
+    name: Validate Static Assets (HTML/CSS)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate HTML and CSS
+        uses: Cyb3r-Jak3/html5validator-action@v7.2.0
+        with:
+          css: true
+          root: './static'
 
+  validate-js:
+    name: Validate JavaScript
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm install eslint @eslint/js globals
+      - run: npx eslint static/script.js
+
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.13'
+      - name: Run tests
+        run: go test -v ./src/...
+
+  gosec:
+    name: Run Gosec Security Scanner
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@v2.20.0
+        with:
+          args: './src/...'
+
+  govulncheck:
+    name: Run govulncheck
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.13'
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          $(go env GOPATH)/bin/govulncheck ./src/...
+
+  trivy-fs:
+    name: Scan code for vulnerabilities (Trivy FS)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Scan code for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  build:
+    name: Build and Push Image
+    needs: [unit-tests, gosec, govulncheck, trivy-fs]
+    runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.build-image.outputs.image_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        id: build-image
+        run: |
+          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
+          echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Authenticate to Google Cloud
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
+
+      - name: Push Docker image
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+        run: docker push ${{ steps.build-image.outputs.image_name }}
+
+  trivy-image-scan:
+    name: Scan image for vulnerabilities (Trivy Image)
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        if: env.DEBUG == 'false'
         uses: actions/checkout@v4
 
-      - name: Set Environment Variables
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
+
+      - name: Pull Docker image
         run: |
-          if [ "${{ github.ref_name }}" == "main" ]; then
-            echo "SERVICE=sbcwaste" >> $GITHUB_ENV
-            echo "APP_ENV=production" >> $GITHUB_ENV
-          elif [ "${{ github.ref_name }}" == "dev" ]; then
-            echo "SERVICE=sbcwaste-dev" >> $GITHUB_ENV
-            echo "APP_ENV=development" >> $GITHUB_ENV
+          echo "Pulling image: ${{ needs.build.outputs.image_name }}"
+          docker pull ${{ needs.build.outputs.image_name }}
+
+      - name: Verify image availability or auth token
+        run: |
+          set -euo pipefail
+          IMAGE="${{ needs.build.outputs.image_name }}"
+          echo "Checking for local image: ${IMAGE}"
+          if docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "Local image found. Proceeding to scan locally."
+            exit 0
           fi
 
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
+          echo "ERROR: No local image available. Docker pull must succeed for local scan." >&2
+          echo "Ensure the 'build' job pushed the image and 'docker pull' succeeded." >&2
+          exit 1
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
         with:
-          token_format: 'access_token'
-          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}' # e.g. - projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
-          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}' # e.g. - my-service-account@my-project.iam.gserviceaccount.com
+          image-ref: ${{ needs.build.outputs.image_name }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Docker Auth
-        if: env.DEBUG == 'false'
-        id: docker-auth
-        uses: 'docker/login-action@v3'
+  gcp-vulnerability-check:
+    name: Check for vulnerabilities in Artifact Registry
+    needs: build
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          username: 'oauth2accesstoken'
-          password: '${{ steps.auth.outputs.access_token }}'
-          registry: '${{ env.GAR_LOCATION }}-docker.pkg.dev'
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-      - name: Build and Push Container
-        if: env.DEBUG == 'false'
-        run: |-
-          docker build -t "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}" ./
-          docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}"
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Poll for scan results
+        run: |
+          IMAGE_WITH_TAG="${{ needs.build.outputs.image_name }}"
+          IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
+
+          echo "Image with tag: ${IMAGE_WITH_TAG}"
+          echo "Fetching image digest..."
+          for i in {1..5}; do
+            describe_output=$(gcloud artifacts docker images describe ${IMAGE_WITH_TAG} --project=${{ env.PROJECT_ID }} --quiet)
+            IMAGE_DIGEST_FULL=$(echo "${describe_output}" | grep "^ *digest:" | awk '{print $2}')
+            if [ -n "$IMAGE_DIGEST_FULL" ]; then
+              echo "Image digest found: ${IMAGE_DIGEST_FULL}"
+              break
+            fi
+            echo "Attempt $i: Image digest not found yet. Waiting 5 seconds..."
+            sleep 5
+          done
+
+          if [ -z "$IMAGE_DIGEST_FULL" ]; then
+            echo "❌ Failed to get image digest for ${IMAGE_WITH_TAG} after several attempts."
+            exit 1
+          fi
+
+          RESOURCE_URL="https://${IMAGE_URL_NO_TAG}@${IMAGE_DIGEST_FULL}"
+          IMAGE_DIGEST_HASH=${IMAGE_DIGEST_FULL#sha256:}
+          CONSOLE_URL="https://console.cloud.google.com/artifacts/docker/${{ env.PROJECT_ID }}/${{ env.GAR_LOCATION }}/${{ env.REPO }}/${{ env.IMAGE }}/sha256:${IMAGE_DIGEST_HASH};tab=vulnerabilities?project=${{ env.PROJECT_ID }}"
+
+          echo "Waiting for vulnerability scan to complete..."
+          echo "View progress at: ${CONSOLE_URL}"
+
+          # Poll for up to 5 minutes (30 attempts * 10 seconds)
+          for i in {1..30}; do
+            # Check if the vulnerability scan occurrence exists for our specific image digest.
+            scan_output=$(gcloud artifacts docker images list ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }} \
+              --project=${{ env.PROJECT_ID }} \
+              --filter="package='${IMAGE_URL_NO_TAG}' AND version='${IMAGE_DIGEST_FULL}'" \
+              --show-occurrences --quiet)
+
+            if echo "$scan_output" | grep -q "FINISHED_SUCCESS"; then  #analysisStatus entity
+              echo -e "\n---"
+              echo "✅ Vulnerability scan complete."
+              break
+            else
+              echo -n "."
+            fi
+
+            if [ $i -eq 30 ]; then
+              echo -e "\n---"
+              echo "❌ Timed out waiting for vulnerability scan results after 5 minutes."
+              echo "Please check the status manually at: ${CONSOLE_URL}"
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # Now that the scan is complete, get the full summary
+          echo "Parsing vulnerabilities..."
+
+          critical_count=$(echo "$scan_output" |yq '.vuln_counts.CRITICAL // 0' -)
+          high_count=$(echo "$scan_output" |yq '.vuln_counts.HIGH // 0' -)
+          medium_count=$(echo "$scan_output" |yq '.vuln_counts.MEDIUM // 0' -)
+          low_count=$(echo "$scan_output" |yq '.vuln_counts.LOW // 0' -)
+          
+          echo "---"
+          echo "Vulnerability Scan Summary:"
+          echo "- CRITICAL: ${critical_count}"
+          echo "- HIGH:     ${high_count}"
+          echo "- MEDIUM:   ${medium_count}"
+          echo "- LOW:      ${low_count}"
+          echo "---"
+
+          if [ "$critical_count" -gt 0 ] || [ "$high_count" -gt 0 ]; then
+            echo "❌ Found ${critical_count} CRITICAL and ${high_count} HIGH severity vulnerabilities."
+            echo "Failing build. View details at: ${CONSOLE_URL}"
+            exit 1
+          else
+            echo "✅ No CRITICAL or HIGH severity vulnerabilities found."
+          fi
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [build, trivy-image-scan, gcp-vulnerability-check]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    steps:
+      - name: Set up deployment environment
+        id: set-env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "APP_ENV=prod" >> $GITHUB_ENV
+            echo "SERVICE=sbcwaste-prod" >> $GITHUB_ENV
+            echo "DOMAIN=sbcwaste.top" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/dev" ]; then
+            echo "APP_ENV=dev" >> $GITHUB_ENV
+            echo "SERVICE=sbcwaste-dev" >> $GITHUB_ENV
+            echo "DOMAIN=dev.sbcwaste.top" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/test" ]; then
+            echo "APP_ENV=test" >> $GITHUB_ENV
+            echo "SERVICE=sbcwaste-test" >> $GITHUB_ENV
+            echo "DOMAIN=test.sbcwaste.top" >> $GITHUB_ENV
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Deploy to Cloud Run
-        if: env.DEBUG == 'false'
-        id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+          image: ${{ needs.build.outputs.image_name }}
           env_vars: |
             APP_ENV=${{ env.APP_ENV }}
             PROJECT_ID=${{ env.PROJECT_ID }}
             CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
 
-      - name: Show Output
-        if: env.DEBUG == 'false'
-        run: echo ${{ steps.deploy.outputs.url }}
+      - name: Verify Application Health
+        run: |
+          echo "Verifying application health for https://${{ env.DOMAIN }}"
+          # First, check the /health endpoint
+          for i in {1..10}; do
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/health")
+            if [ "$response_code" == "200" ]; then
+              body=$(curl -s "https://${{ env.DOMAIN }}/health")
+              if echo "$body" | grep -q '{"status": "ok"}'; then
+                echo "Health check successful on /health endpoint."
+                break
+              else
+                echo "Attempt $i: /health endpoint is up, but response is not as expected. Waiting 30 seconds..."
+              fi
+            else
+              echo "Attempt $i: /health endpoint not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
+            fi
+            sleep 30
+          done
 
-      - name: List gcloud domains
-        if: env.DEBUG == 'true'
-        run: |-
-          echo $(gcloud run services list --platform managed)
+          if [ $i -eq 10 ]; then
+            echo "Health check on /health endpoint failed after several attempts."
+            exit 1
+          fi
+
+          # Second, check the root path to ensure the app is serving static assets
+          for i in {1..10}; do
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/")
+            if [ "$response_code" == "200" ]; then
+              echo "Health check successful on root path."
+              exit 0
+            else
+              echo "Attempt $i: Root path not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
+            fi
+            sleep 30
+          done
+
+          echo "Health check on root path failed after several attempts."
+          exit 1
+
+  cleanup-images:
+    name: Clean up old container images
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set Google Cloud project
+        run: gcloud config set project ${{ env.PROJECT_ID }}
+
+      - name: Clean up old images
+        continue-on-error: true
+        run: |
+          echo "Identifying images to clean up in ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}"
+
+          # Function to get the canonical image URI (with digest) from a Cloud Run service
+          get_deployed_image_uri() {
+            local service_name=$1
+            local image_url=""
+            local image_digest=""
+            local canonical_uri=""
+
+            image_url=$(gcloud run services describe "$service_name" --platform managed --region "${{ env.REGION }}" --project="${{ env.PROJECT_ID }}" --format='value(spec.template.spec.containers[0].image)' 2>/dev/null)
+
+            if [ -n "$image_url" ]; then
+              image_digest=$(gcloud artifacts docker images describe "$image_url" --project="${{ env.PROJECT_ID }}" --format='value(image_summary.digest)' 2>/dev/null)
+              if [ -n "$image_digest" ]; then
+                canonical_uri="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}@${image_digest}"
+                echo "$canonical_uri"
+              fi
+            fi
+          }
+
+          prod_image=$(get_deployed_image_uri "sbcwaste-prod")
+          dev_image=$(get_deployed_image_uri "sbcwaste-dev")
+          test_image=$(get_deployed_image_uri "sbcwaste-test")
+
+          echo "Currently deployed images (canonical URI):"
+          echo "Prod: ${prod_image:-'not found'}"
+          echo "Dev: ${dev_image:-'not found'}"
+          echo "Test: ${test_image:-'not found'}"
+
+          # Get all image URIs for the service, sorted from newest to oldest.
+          all_images=$(gcloud artifacts docker images list "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --filter="package='${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}'" \
+            --sort-by="~CREATE_TIME" \
+            --format="json" | \
+            jq -r '.[] | .version' 2>/dev/null) || all_images=""
+
+          if [ -z "$all_images" ]; then
+            echo "No images found for this service. Nothing to do."
+            exit 0
+          fi
+
+          # Build a unique list of images to keep
+          images_to_keep_list=()
+          [ -n "$prod_image" ] && images_to_keep_list+=("$prod_image")
+          [ -n "$dev_image" ] && images_to_keep_list+=("$dev_image")
+          [ -n "$test_image" ] && images_to_keep_list+=("$test_image")
+
+          # Add the 5 most recent images to the keep list
+          images_to_keep_list+=($(echo "$all_images" | head -n 5))
+
+          # Create a unique, sorted list of images to keep
+          unique_keep_list=$(printf "%s\n" "${images_to_keep_list[@]}" | sort -u)
+
+          echo "---"
+          echo "Images to keep:"
+          echo "$unique_keep_list"
+          echo "---"
+
+          # Use `grep` to find images that are in all_images but not in unique_keep_list.
+          delete_list=$(echo "$all_images" | grep -vFx -f <(echo "$unique_keep_list") || true)
+
+          if [ -n "$delete_list" ]; then
+            echo "The following images will be deleted:"
+            echo "$delete_list"
+            # The delete command requires the full image URI with the digest, which we now have.
+            echo "$delete_list" | xargs -r gcloud artifacts docker images delete --delete-tags -q
+          else
+            echo "No images to delete."
+          fi

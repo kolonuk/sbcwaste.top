@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swindon Waste Bin Collection Calendar</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Swindon Bin Collection Calendar</h1>
+            <p>Fed up of not knowing which bin is being collected this week? Get your bin collection dates from the Swindon Borough Council website and easily add them to your calendar.</p>
+            <p>This service uses data from the official <a id="sbc-website-link" href="https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days" target="_blank">Swindon Borough Council website</a>.</p>
+            <p>This service is dependant on the council's website working properly - if you have any issues with this, your first step should be to check their own website above.</p>
+        </header>
+
+        <section id="address-lookup">
+            <h2>1. Find Your Address</h2>
+            <p>To get your collection schedule, we first need to find your property's <strong>Unique Property Reference Number (UPRN)</strong>. A UPRN is a unique identifier for every addressable location in Great Britain. You can <a href="https://www.geoplace.co.uk/addresses-streets/location-data/the-uprn" target="_blank">learn more about UPRNs on the GeoPlace website</a>.</p>
+            <p>Enter your postcode or street name below to find your UPRN.</p>
+            <input type="text" id="address-search" placeholder="Enter your postcode or street name">
+            <button id="search-btn">Search</button>
+            <div id="search-results"></div>
+        </section>
+
+        <section id="ics-generator">
+            <h2>2. Generate Your Calendar Link</h2>
+            <p>Once you've found your UPRN from the search results, enter it below to generate a personal calendar link.</p>
+            <p>This link uses the iCalendar (ICS) format, a standard way to share calendar information. You can learn more about it on <a href="https://en.wikipedia.org/wiki/ICalendar" target="_blank">Wikipedia</a>.</p>
+            <input type="text" id="uprn-ics-input" placeholder="Enter your UPRN here">
+            <button id="generate-ics-btn">Generate Link</button>
+            <div id="ics-link-container"></div>
+            <div id="ics-actions-container"></div>
+        </section>
+
+        <section id="calendar-instructions">
+            <h2>3. Add to Your Calendar</h2>
+            <p>Follow these simple instructions to add the generated link to your favorite calendar app.</p>
+            <details>
+                <summary>Google Calendar</summary>
+                <ol>
+                    <li>On your computer, open <a href="https://calendar.google.com" target="_blank">Google Calendar</a>.</li>
+                    <li>On the left, next to "Other calendars," click the `+` icon and select "From URL."</li>
+                    <li>Paste your generated calendar link into the field.</li>
+                    <li>Click "Add calendar." It will now appear in your calendar list.</li>
+                </ol>
+            </details>
+            <details>
+                <summary>Microsoft Outlook</summary>
+                <ol>
+                    <li>Open the Outlook desktop app.</li>
+                    <li>Go to the Calendar section.</li>
+                    <li>In the "Home" tab, click "Add Calendar" and select "From Internet."</li>
+                    <li>Paste your generated calendar link and click "OK."</li>
+                </ol>
+            </details>
+            <details>
+                <summary>Apple Calendar</summary>
+                <ol>
+                    <li>Open the Calendar app on your Mac.</li>
+                    <li>Go to "File" > "New Calendar Subscription."</li>
+                    <li>Paste your generated calendar link and click "Subscribe."</li>
+                    <li>Customize the settings and click "OK."</li>
+                </ol>
+            </details>
+             <details>
+                <summary>Android / Google Calendar App</summary>
+                <p>Adding a calendar subscription must be done from the Google Calendar website on a computer (see the "Google Calendar" instructions above). Once added, it will automatically sync to your Android device's calendar app.</p>
+            </details>
+            <details>
+                <summary>For Advanced Users: API Usage</summary>
+                <p>You can also access the collection data directly in various formats. This is useful for developers or for integrating with other applications.</p>
+                <p>Append the desired format to the UPRN in the URL:</p>
+                <ul>
+                    <li><code>/&lt;UPRN&gt;/json</code> - JSON format (also the default, this may change)</li>
+                    <li><code>/&lt;UPRN&gt;/xml</code> - XML format</li>
+                    <li><code>/&lt;UPRN&gt;/yaml</code> - YAML format</li>
+                    <li><code>/&lt;UPRN&gt;/ics</code> - iCalendar format</li>
+                </ul>
+                <p>You can also add the following query parameter:</p>
+                <ul>
+                    <li><code>?icons=yes</code> - Include base64-encoded icon data in the output (JSON, XML, YAML only). EXPERIMENTAL </li>
+                </ul>
+            </details>
+        </section>
+
+        <section id="support">
+            <h2>Support the Project</h2>
+            <p>This is an open-source project that started as a personal tool to keep track of my own bin collection days. I decided to open it up for everyone to use. If you find it useful and want to contribute, or if you've found an issue, please check out the project on <a href="https://github.com/kolonuk/sbcwaste.top">GitHub</a>.</p>
+            <p>If you'd like to show your appreciation, you can <a href="https://paypal.me/kolonuk" target="_blank">send me some funds</a>!</p>
+        </section>
+
+        <div class="disclaimer">
+            <p>This site exists because the council does not offer a direct, user-friendly iCalendar link. This website would not be necessary if the council's website offered more useful features.</p>
+            <p>Donations go towards covering this site's reasonably small running costs (see our <a href="costs.html">running costs page</a>) and are not intended for profit. Any unintended profits will be donated to charity annually.</p>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

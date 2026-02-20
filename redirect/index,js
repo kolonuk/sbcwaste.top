@@ -1,4 +1,0 @@
-exports.redirectToWWW = (req, res) => {
-    const targetUrl = `https://www.sbcwaste.top${req.url}`;
-    res.redirect(301, targetUrl);
-};
