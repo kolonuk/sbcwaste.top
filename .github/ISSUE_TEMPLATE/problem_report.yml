@@ -1,0 +1,39 @@
+name: Problem Report
+description: File a report for a problem or a feature request.
+title: "[REPORT] "
+labels: ["pending triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for submitting a report. Please provide the following details.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the issue or feature request.
+    validations:
+      required: true
+  - type: input
+    id: uprn
+    attributes:
+      label: UPRN
+      description: If applicable, the UPRN related to the issue.
+  - type: input
+    id: datetime
+    attributes:
+      label: Date and Time
+      description: The date and time the issue occurred.
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Type of issue
+      description: "What type of issue are you reporting?"
+      options:
+        - "Frontend Issue"
+        - "UPRN Issue"
+        - "Incorrect Dates"
+        - "No Data"
+        - "Feature Request"
+    validations:
+      required: true

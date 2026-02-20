@@ -43,3 +43,30 @@ To clear the Firestore cache in the cloud environment, you can delete the docume
 1.  Navigate to the **Firestore** page in the Google Cloud Console.
 2.  Select your project and you should see the `sbcwaste_cache` collection.
 3.  You can manually delete individual documents (cached items) or delete the entire collection by clicking the three dots next to the collection name and selecting "Delete collection".
+
+## Getting Started
+
+1.  **Install dependencies:** `go mod tidy`
+2.  **Run the application:** `go run ./src`
+3.  **Run tests:** `go test ./...`
+
+## Notes
+
+*   The application uses a local SQLite database (`sbcwaste.db`) for caching in development. This file is git-ignored.
+*   The compiled binary (`sbcwaste`) is also git-ignored.
+*   The application uses `chromedp` for web scraping. You may need to have chromium installed. On ubuntu, you can use `sudo apt install -y chromium-browser`
+*   The application can be containerised using the provided `Dockerfile`.
+*   The CI/CD pipeline is defined in `.github/workflows/google-cloudrun-docker.yml`.
+
+## Adding a new council
+
+To add a new council, you will need to:
+
+1.  Create a new scraper function for the council's website.
+2.  Implement the `Council` interface for the new council.
+3.  Add the new council to the `CouncilFactory` so that it can be selected based on postcode or other identifier.
+4.  Add tests for the new council's scraper.
+5.  Update the documentation to include the new council.
+6.  Consider using a headless browser library like `chromedp` for interactive web scraping.
+
+Remember to add tests for any new functionality to prevent regressions.

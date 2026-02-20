@@ -76,5 +76,7 @@ wget*
 gha-creds-*.json
 
 # sbcwaste files
-sbcwaste
+/sbcwaste
 sbcwaste.db
+
+src/src

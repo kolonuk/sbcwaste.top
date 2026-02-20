@@ -17,38 +17,48 @@ func TestSqliteCache(t *testing.T) {
 	defer os.Remove("./sbcwaste.db")
 
 	// Test Set and Get
-	collections := &Collections{
-		Collections: []Collection{
-			{Type: "Refuse", CollectionDates: []string{"2025-01-01"}},
-		},
-		Address: "Test Address",
-	}
-	err = cache.Set("12345", collections, time.Hour)
+	/*
+		type Collection struct {
+			Type            string   `json:"type"`
+			CollectionDates []string `json:"CollectionDates"`
+		}
+		type Collections struct {
+			Collections []Collection `json:"collections"`
+			Address     string       `json:"address"`
+		}
+	*/
+	// Using a simple JSON string to test the byte storage directly
+	testValue := []byte(`{"address": "Test Address", "collections": [{"type": "Refuse", "CollectionDates": ["2025-01-01"]}]}`)
+
+	err = cache.Set("12345", testValue, time.Hour)
 	if err != nil {
 		t.Fatalf("Failed to set cache: %v", err)
 	}
 
-	cachedCollections, err := cache.Get("12345")
+	cachedBytes, created, err := cache.Get("12345")
 	if err != nil {
 		t.Fatalf("Failed to get cache: %v", err)
 	}
-	if cachedCollections == nil {
+	if cachedBytes == nil {
 		t.Fatal("Cache returned nil")
 	}
-	if cachedCollections.Address != "Test Address" {
-		t.Errorf("Expected address 'Test Address', got '%s'", cachedCollections.Address)
+	if created.IsZero() {
+		t.Fatal("Expected created timestamp, but it was zero")
+	}
+	if string(cachedBytes) != string(testValue) {
+		t.Errorf("Expected value '%s', got '%s'", string(testValue), string(cachedBytes))
 	}
 
 	// Test cache expiration
-	err = cache.Set("54321", collections, -time.Hour)
+	err = cache.Set("54321", testValue, -time.Hour)
 	if err != nil {
 		t.Fatalf("Failed to set cache: %v", err)
 	}
-	cachedCollections, err = cache.Get("54321")
+	cachedBytes, _, err = cache.Get("54321")
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		t.Fatalf("Failed to get expired cache: %v", err)
 	}
-	if cachedCollections != nil {
+	if cachedBytes != nil {
 		t.Fatal("Expected expired cache to be nil")
 	}
 }
