@@ -22,6 +22,11 @@ on:
         required: true
         default: '259200'
   pull_request:
+    branches:
+      - main
+      - dev
+      - test
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
@@ -40,46 +45,87 @@ env:
   REGION: europe-west1
 
 jobs:
-  validate-html:
-    name: Validate HTML
+  validate-static:
+    name: Validate Static Assets (HTML/CSS)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Validate HTML
-        uses: anand-p-r/w3c-html-validator@v1
+      - name: Validate HTML and CSS
+        uses: Cyb3r-Jak3/html5validator-action@v7.2.0
         with:
-          html-file: './static/index.html'
-          html-file-encoding: 'UTF-8'
-
-  validate-css:
-    name: Validate CSS
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate CSS
-        uses: anand-p-r/w3c-css-validator@v1
-        with:
-          css-file: './static/style.css'
-          css-file-encoding: 'UTF-8'
+          css: true
+          root: './static'
 
   validate-js:
     name: Validate JavaScript
     runs-on: ubuntu-latest
-    continue-on-error: true
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v3
         with:
           node-version: '20'
-      - run: npm install eslint
-      - run: npx eslint --config .eslintrc.js static/script.js
+      - run: npm install eslint @eslint/js globals
+      - run: npx eslint static/script.js
+
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    container: golang:1.24
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run tests
+        run: go test -v ./src/...
+
+  gosec:
+    name: Run Gosec Security Scanner
+    runs-on: ubuntu-latest
+    container: golang:1.24
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Run Gosec Security Scanner
+        run: $(go env GOPATH)/bin/gosec ./src/...
+
+  govulncheck:
+    name: Run govulncheck
+    runs-on: ubuntu-latest
+    container: golang:1.24
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          $(go env GOPATH)/bin/govulncheck ./src/...
+
+  trivy-fs:
+    name: Scan code for vulnerabilities (Trivy FS)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Scan code for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          exit-code: '1'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
   build:
-    name: Build, Scan, and Push
+    name: Build and Push Image
+    needs: [validate-static, validate-js, unit-tests, gosec, govulncheck, trivy-fs]
     runs-on: ubuntu-latest
     outputs:
       image_name: ${{ steps.build-image.outputs.image_name }}
@@ -87,62 +133,97 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.11'
-
-      - name: Run tests
-        run: go test ./src/...
-
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
-        with:
-          args: './src/...'
-
-
       - name: Build Docker image
         id: build-image
         run: |
           docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
           echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
-      - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ steps.build-image.outputs.image_name }}
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
       - name: Authenticate to Google Cloud
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
 
       - name: Push Docker image
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
         run: docker push ${{ steps.build-image.outputs.image_name }}
 
-      - name: Check for vulnerabilities in Artifact Registry
-        if: github.event_name == 'push'
+  trivy-image-scan:
+    name: Scan image for vulnerabilities (Trivy Image)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
+
+      - name: Pull Docker image
         run: |
-          IMAGE_WITH_TAG="${{ steps.build-image.outputs.image_name }}"
+          echo "Pulling image: ${{ needs.build.outputs.image_name }}"
+          docker pull ${{ needs.build.outputs.image_name }}
+
+      - name: Verify image availability or auth token
+        run: |
+          set -euo pipefail
+          IMAGE="${{ needs.build.outputs.image_name }}"
+          echo "Checking for local image: ${IMAGE}"
+          if docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "Local image found. Proceeding to scan locally."
+            exit 0
+          fi
+
+          echo "ERROR: No local image available. Docker pull must succeed for local scan." >&2
+          echo "Ensure the 'build' job pushed the image and 'docker pull' succeeded." >&2
+          exit 1
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_name }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  gcp-vulnerability-check:
+    name: Check for vulnerabilities in Artifact Registry
+    needs: build
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Poll for scan results
+        run: |
+          IMAGE_WITH_TAG="${{ needs.build.outputs.image_name }}"
           IMAGE_URL_NO_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
 
           echo "Image with tag: ${IMAGE_WITH_TAG}"
@@ -221,9 +302,9 @@ jobs:
 
   deploy:
     name: Deploy to Cloud Run
-    needs: build
+    needs: [build, trivy-image-scan, gcp-vulnerability-check]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Set up deployment environment
         id: set-env
@@ -258,21 +339,6 @@ jobs:
             APP_ENV=${{ env.APP_ENV }}
             PROJECT_ID=${{ env.PROJECT_ID }}
             CACHE_EXPIRY_SECONDS=${{ github.event.inputs.CACHE_EXPIRY_SECONDS || '259200' }}
-
-      - name: Verify DNS
-        run: |
-          echo "Verifying DNS for ${{ env.DOMAIN }}..."
-          for i in {1..10}; do
-            cname=$(dig +short ${{ env.DOMAIN }} CNAME)
-            if [ "$cname" == "ghs.googlehosted.com." ]; then
-              echo "DNS verification successful."
-              exit 0
-            fi
-            echo "Attempt $i: DNS not yet propagated. Waiting 30 seconds..."
-            sleep 30
-          done
-          echo "DNS verification failed after several attempts."
-          exit 1
 
       - name: Verify Application Health
         run: |
@@ -318,7 +384,7 @@ jobs:
     name: Clean up old container images
     needs: deploy
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test')
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2

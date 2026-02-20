@@ -45,17 +45,17 @@ type Collections struct {
 
 // CacheInfo holds statistics about the cache
 type CacheInfo struct {
-	Source      string `json:"source" xml:"source" yaml:"source"`
-	Age         string `json:"age" xml:"age" yaml:"age"`
-	ExpiresIn   string `json:"expiresIn" xml:"expiresIn" yaml:"expiresIn"`
+	Source    string `json:"source" xml:"source" yaml:"source"`
+	Age       string `json:"age" xml:"age" yaml:"age"`
+	ExpiresIn string `json:"expiresIn" xml:"expiresIn" yaml:"expiresIn"`
 }
 
 type requestParams struct {
-	uprn         string
-	output       string
-	debugging    bool
-	showIcons    bool
-	skipCache    bool
+	uprn           string
+	output         string
+	debugging      bool
+	showIcons      bool
+	skipCache      bool
 	showCacheStats bool
 }
 
@@ -63,6 +63,8 @@ var (
 	once            sync.Once
 	chromedpContext context.Context
 	cancel          context.CancelFunc
+	uprnRegex       = regexp.MustCompile("^[0-9]{1,20}$")
+	cssUrlRegex     = regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
 )
 
 func shutdownSbcwasteChromedp() {
@@ -84,9 +86,9 @@ func getIcon(ctx context.Context, url string) (string, bool, time.Duration, erro
 	useCache := appEnv == "production" || appEnv == "test"
 
 	if useCache {
-		dummyCollections, created, err := cache.Get(url)
-		if err == nil && dummyCollections != nil && len(dummyCollections.Collections) > 0 {
-			return dummyCollections.Collections[0].IconDataURI, true, time.Since(created), nil
+		cachedData, created, err := cache.Get(url)
+		if err == nil && cachedData != nil {
+			return string(cachedData), true, time.Since(created), nil
 		}
 	}
 
@@ -98,10 +100,7 @@ func getIcon(ctx context.Context, url string) (string, bool, time.Duration, erro
 
 	if useCache {
 		// Cache the icon for 7 days
-		dummyToCache := &Collections{
-			Collections: []Collection{{IconDataURI: iconDataURI}},
-		}
-		if err := cache.Set(url, dummyToCache, 7*24*time.Hour); err != nil {
+		if err := cache.Set(url, []byte(iconDataURI), 7*24*time.Hour); err != nil {
 			log.Printf("Failed to cache icon for URL %s: %v", url, err)
 		}
 	}
@@ -126,7 +125,7 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 	}
 
 	// Validate that the UPRN is a numeric value with a reasonable length
-	if matched, _ := regexp.MatchString("^[0-9]{1,20}$", params.uprn); !matched {
+	if !uprnRegex.MatchString(params.uprn) {
 		return nil, errors.New("invalid UPRN format")
 	}
 
@@ -151,15 +150,15 @@ var fetchCollectionsFromSBC = func(ctx context.Context, client *http.Client, par
 	}
 
 	// Create a new HTTP client with a timeout
-	sbcClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
+	// Reuse the passed client but add a timeout to the context
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days?addressList="+params.uprn+"&uprnSubmit=Yes", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	res, err := sbcClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -276,8 +275,7 @@ func parseCollections(doc *goquery.Document) (*Collections, error) {
 
 		doc.Find(".bin-icons").Each(func(i int, s *goquery.Selection) {
 			style, _ := s.Attr("style")
-			re := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
-			matches := re.FindStringSubmatch(style)
+			matches := cssUrlRegex.FindStringSubmatch(style)
 			if len(matches) > 1 {
 				if i < len(tempCollections) {
 					tempCollections[i].IconURL = matches[1]
@@ -322,11 +320,16 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 
 	if useCache {
 		_, err := func() (time.Time, error) {
-			collections, created, err := cache.Get(params.uprn)
-			if err != nil || collections == nil {
+			cachedBytes, created, err := cache.Get(params.uprn)
+			if err != nil || cachedBytes == nil {
 				if params.debugging {
 					log.Printf("Cache miss for UPRN: %s", params.uprn)
 				}
+				return time.Time{}, err
+			}
+
+			if err := json.Unmarshal(cachedBytes, &collections); err != nil {
+				log.Printf("Failed to unmarshal cache for UPRN %s: %v", params.uprn, err)
 				return time.Time{}, err
 			}
 
@@ -373,8 +376,14 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			if cacheExpirySeconds <= 0 {
 				cacheExpirySeconds = 259200 // 3 days
 			}
-			if err := cache.Set(params.uprn, collections, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
-				log.Printf("Failed to cache collections for UPRN %s: %v", params.uprn, err)
+
+			collectionsBytes, err := json.Marshal(collections)
+			if err != nil {
+				log.Printf("Failed to marshal collections for cache: %v", err)
+			} else {
+				if err := cache.Set(params.uprn, collectionsBytes, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
+					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706 -- uprn is validated by uprnRegex (numeric only) and newlines stripped above
+				}
 			}
 		}
 	} else {
@@ -454,7 +463,7 @@ func formatAsYAML(w http.ResponseWriter, collections *Collections) {
 		http.Error(w, "Failed to marshal YAML", http.StatusInternalServerError)
 		return
 	}
-	if _, err := w.Write(yamlData); err != nil {
+	if _, err := w.Write(yamlData); err != nil { // #nosec G705 -- yamlData is marshalled from internal structs, not user-supplied content
 		log.Printf("Failed to write YAML response: %v", err)
 	}
 }
@@ -519,8 +528,6 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		return fmt.Errorf("failed to get icon URLs via chromedp: %w", err)
 	}
 
-	urlRegex := regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
-
 	for i := range collections.Collections {
 		collectionType := collections.Collections[i].Type
 		bgImage, ok := iconURLs[collectionType]
@@ -529,7 +536,7 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 			continue
 		}
 
-		matches := urlRegex.FindStringSubmatch(bgImage)
+		matches := cssUrlRegex.FindStringSubmatch(bgImage)
 		if len(matches) < 2 {
 			collections.Collections[i].IconURL = "Error: Could not parse icon URL from CSS."
 			continue
@@ -544,7 +551,7 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		// Now, fetch and encode the icon
 		iconDataURI, cacheHit, cacheAge, err := getIcon(ctx, iconURL)
 		if err != nil {
-			log.Printf("Failed to get icon for %s: %v", collectionType, err)
+			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706 -- collectionType is scraped from SBC website HTML and newlines stripped
 			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
 		} else {
 			collections.Collections[i].IconDataURI = iconDataURI
@@ -586,7 +593,7 @@ func formatAsICS(w http.ResponseWriter, collections *Collections, params *reques
 			summary := foldLine(fmt.Sprintf("SUMMARY:%s", collection.Type))
 			location := foldLine(fmt.Sprintf("LOCATION:%s", collections.Address))
 			urlLine := foldLine(fmt.Sprintf("URL:%s", url))
-			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n",
+			fmt.Fprintf(&icsBuilder, "BEGIN:VEVENT\r\n%s\r\nDTSTAMP:%s\r\nDTSTART;VALUE=DATE:%s\r\nDTEND;VALUE=DATE:%s\r\n%s\r\n%s\r\nTRANSP:TRANSPARENT\r\n%s\r\nEND:VEVENT\r\n", // #nosec G705 -- icsBuilder is a strings.Builder (not http.ResponseWriter); url is a hardcoded server-side string
 				uid, dtStamp, start, end, summary, location, urlLine)
 		}
 	}
