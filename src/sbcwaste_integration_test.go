@@ -41,6 +41,14 @@ func TestMain(m *testing.M) {
 
 // TestLiveWasteCollectionAPI is a comprehensive integration test that queries the live SBC Waste API.
 // It checks all output formats, with and without the icon scraping feature enabled.
+//
+// NOTE: This test relies on the LIVE Swindon Borough Council website.
+// If this test fails, it is likely due to:
+// 1. The SBC website is down or unreachable.
+// 2. The SBC website layout has changed, breaking the HTML parsing logic.
+//
+// If you encounter failures, please check the live site manually.
+// If the layout has changed, the 'parseCollections' function in sbcwaste.go will need to be updated.
 func TestLiveWasteCollectionAPI(t *testing.T) {
 	// Set the environment to development to use the SQLite cache for tests.
 	t.Setenv("APP_ENV", "development")
@@ -146,7 +154,9 @@ func validateCollectionsStruct(t *testing.T, c *Collections, showIcons bool) {
 
 	if len(c.Collections) == 0 {
 		t.Logf("Address: %s", c.Address)
-		t.Fatal("Expected at least one collection, but got none")
+		t.Fatal("Expected at least one collection, but got none. \n" +
+			"POSSIBLE CAUSE: The SBC website layout may have changed, or the UPRN has no collections.\n" +
+			"Action: Check https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days with the UPRN manually.")
 	}
 
 	for _, coll := range c.Collections {
