@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -32,11 +33,8 @@ func main() {
 	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
-	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
-	mux.Handle("/api/waste", http.HandlerFunc(WasteCollection))
-
 	// Add the new file server handler.
-	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("static"))))
+	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("./static"))))
 	mux.Handle("/", securityHeadersMiddleware(rootHandler(fileServer)))
 
 	// Chain the middleware. The request will pass through the rate limiter first,
@@ -63,8 +61,11 @@ func main() {
 
 func rootHandler(fileServer http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Serve the root path using the static file server
-		if r.URL.Path == "/" {
+		path := strings.Trim(r.URL.Path, "/")
+		pathSegments := strings.Split(path, "/")
+
+		// If it's the root or doesn't look like a UPRN path, serve static files
+		if r.URL.Path == "/" || (len(pathSegments) > 0 && !regexp.MustCompile(`^[0-9]{1,20}$`).MatchString(pathSegments[0])) {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
