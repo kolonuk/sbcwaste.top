@@ -17,6 +17,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 # Use a slim base image
 FROM debian:trixie-slim
 
+# Set working directory
+WORKDIR /app
+
 # Update the base image to include the latest security patches and CA certificates
 RUN apt-get update && \
     apt-get upgrade -y && \
@@ -24,10 +27,10 @@ RUN apt-get update && \
     update-ca-certificates
 
 # Copy the compiled Go program from the builder stage
-COPY --from=builder /app/sbcwaste /
+COPY --from=builder /app/sbcwaste .
 
 # Copy the static assets
-COPY static /static
+COPY static ./static
 
 # Set the environment variable for the port. Cloud Run will set this value.
 ENV PORT 8080
@@ -36,4 +39,4 @@ ENV PORT 8080
 EXPOSE 8080
 
 # Command to run the binary
-CMD ["/sbcwaste"]
+CMD ["./sbcwaste"]
