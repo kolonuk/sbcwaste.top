@@ -323,18 +323,18 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			cachedBytes, created, err := cache.Get(params.uprn)
 			if err != nil || cachedBytes == nil {
 				if params.debugging {
-					log.Printf("Cache miss for UPRN: %s", params.uprn)
+					log.Printf("Cache miss for UPRN: %s", strings.ReplaceAll(params.uprn, "\n", "")) // #nosec G706
 				}
 				return time.Time{}, err
 			}
 
 			if err := json.Unmarshal(cachedBytes, &collections); err != nil {
-				log.Printf("Failed to unmarshal cache for UPRN %s: %v", params.uprn, err)
+				log.Printf("Failed to unmarshal cache for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706
 				return time.Time{}, err
 			}
 
 			if params.debugging {
-				log.Printf("Cache hit for UPRN: %s", params.uprn)
+				log.Printf("Cache hit for UPRN: %s", strings.ReplaceAll(params.uprn, "\n", "")) // #nosec G706
 			}
 
 			if params.showCacheStats {
