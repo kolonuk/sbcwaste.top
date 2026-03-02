@@ -382,7 +382,7 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Failed to marshal collections for cache: %v", err)
 			} else {
 				if err := cache.Set(params.uprn, collectionsBytes, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
-					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706 -- uprn is validated by uprnRegex (numeric only) and newlines stripped above
+					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706
 				}
 			}
 		}
@@ -551,7 +551,7 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		// Now, fetch and encode the icon
 		iconDataURI, cacheHit, cacheAge, err := getIcon(ctx, iconURL)
 		if err != nil {
-			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706 -- collectionType is scraped from SBC website HTML and newlines stripped
+			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706
 			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
 		} else {
 			collections.Collections[i].IconDataURI = iconDataURI
