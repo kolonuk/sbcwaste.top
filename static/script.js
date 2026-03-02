@@ -127,8 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             li.addEventListener('click', () => {
                                 uprnIcsInput.value = item.uprn;
                                 generateIcsLink();
-                                // Optional: scroll to the link container
-                                document.getElementById('ics-generator').scrollIntoView({ behavior: 'smooth' });
+                                // Optional: scroll to the upcoming collections section
+                                document.getElementById('upcoming-collections').scrollIntoView({ behavior: 'smooth' });
                             });
                             ul.appendChild(li);
                         });
