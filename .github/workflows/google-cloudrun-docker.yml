@@ -115,7 +115,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Scan code for vulnerabilities
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -205,7 +205,7 @@ jobs:
           echo "Ensure the 'build' job pushed the image and 'docker pull' succeeded." >&2
           exit 1
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ needs.build.outputs.image_name }}
           format: 'table'
