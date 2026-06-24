@@ -64,7 +64,7 @@ func cleanupVisitors() {
 func rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Do not rate limit the main page, the help page, or static assets
-		if r.URL.Path == "/" || r.URL.Path == "/api/help" || strings.HasPrefix(r.URL.Path, "/static/") {
+		if r.URL.Path == "/" || r.URL.Path == "/api/help" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	// _ "net/http/pprof"
 )
 
 func main() {
@@ -35,11 +34,9 @@ func main() {
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
 	// Add the new file server handler.
 	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("./static"))))
-	mux.Handle("/", securityHeadersMiddleware(rootHandler(fileServer)))
+	mux.Handle("/", rootHandler(fileServer))
 
-	// Chain the middleware. The request will pass through the rate limiter first,
-	// then the security headers handler, and finally to the router.
-	handler := rateLimit(mux)
+	handler := rateLimit(securityHeadersMiddleware(mux))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -48,9 +45,9 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + port,
-		Handler:      handler, // Use the chained handler
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 35 * time.Second, // must exceed chromedp 30s timeout for icon requests
 	}
 
 	log.Printf("Starting server on port %s", strings.ReplaceAll(port, "\n", "")) // #nosec G706 -- port is from env var, numeric-only after defaulting, newlines stripped
@@ -129,11 +126,12 @@ func (w gzipResponseWriter) WriteHeader(statusCode int) {
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add various security headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
 
-		// Only add the HSTS header in non-development environments
 		if os.Getenv("APP_ENV") != "development" {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}

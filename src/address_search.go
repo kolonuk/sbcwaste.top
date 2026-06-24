@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 )
 
@@ -21,7 +22,7 @@ func SearchAddressHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	insecure := r.URL.Query().Get("insecure") == "true"
+	insecure := r.URL.Query().Get("insecure") == "true" && os.Getenv("APP_ENV") == "development"
 	var client *http.Client
 	if insecure {
 		client = InsecureHTTPClient
