@@ -63,15 +63,19 @@ var (
 	once            sync.Once
 	chromedpContext context.Context
 	cancel          context.CancelFunc
+	allocCancel     context.CancelFunc
 	uprnRegex       = regexp.MustCompile("^[0-9]{1,20}$")
 	cssUrlRegex     = regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
 )
 
 func shutdownSbcwasteChromedp() {
-	// this function is called from main.go to ensure graceful shutdown of the browser
 	if cancel != nil {
 		cancel()
 		log.Println("Chromedp context cancelled.")
+	}
+	if allocCancel != nil {
+		allocCancel()
+		log.Println("Chromedp allocator context cancelled.")
 	}
 }
 
@@ -135,9 +139,9 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 		params.output = "json"
 	}
 
-	params.debugging = r.URL.Query().Get("debug") == "yes"
+	params.debugging = r.URL.Query().Get("debug") == "yes" && os.Getenv("APP_ENV") != "production"
 	params.showIcons = r.URL.Query().Get("icons") == "yes"
-	params.skipCache = r.URL.Query().Get("skipcache") == "yes"
+	params.skipCache = r.URL.Query().Get("skipcache") == "yes" && os.Getenv("APP_ENV") != "production"
 	params.showCacheStats = r.URL.Query().Get("cachestats") == "yes"
 
 	return params, nil
@@ -318,23 +322,29 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	useCache := (appEnv == "production" || appEnv == "test") && !params.skipCache
 	var collections *Collections
 
+	insecure := r.URL.Query().Get("insecure") == "true" && appEnv == "development"
+	client := HTTPClient
+	if insecure {
+		client = InsecureHTTPClient
+	}
+
 	if useCache {
 		_, err := func() (time.Time, error) {
 			cachedBytes, created, err := cache.Get(params.uprn)
 			if err != nil || cachedBytes == nil {
 				if params.debugging {
-					log.Printf("Cache miss for UPRN: %s", params.uprn)
+					log.Printf("Cache miss for UPRN: %s", strings.ReplaceAll(params.uprn, "\n", "")) // #nosec G706
 				}
 				return time.Time{}, err
 			}
 
 			if err := json.Unmarshal(cachedBytes, &collections); err != nil {
-				log.Printf("Failed to unmarshal cache for UPRN %s: %v", params.uprn, err)
+				log.Printf("Failed to unmarshal cache for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706
 				return time.Time{}, err
 			}
 
 			if params.debugging {
-				log.Printf("Cache hit for UPRN: %s", params.uprn)
+				log.Printf("Cache hit for UPRN: %s", strings.ReplaceAll(params.uprn, "\n", "")) // #nosec G706
 			}
 
 			if params.showCacheStats {
@@ -359,12 +369,6 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 			return created, nil
 		}()
 		if err != nil {
-			// Fetch from source if cache miss
-			insecure := r.URL.Query().Get("insecure") == "true"
-			client := HTTPClient
-			if insecure {
-				client = InsecureHTTPClient
-			}
 			collections, err = fetchCollectionsFromSBC(ctx, client, params)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to fetch collections: %v", err), http.StatusInternalServerError)
@@ -382,17 +386,11 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Failed to marshal collections for cache: %v", err)
 			} else {
 				if err := cache.Set(params.uprn, collectionsBytes, time.Duration(cacheExpirySeconds)*time.Second); err != nil {
-					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706 -- uprn is validated by uprnRegex (numeric only) and newlines stripped above
+					log.Printf("Failed to cache collections for UPRN %s: %v", strings.ReplaceAll(params.uprn, "\n", ""), err) // #nosec G706
 				}
 			}
 		}
 	} else {
-		// In development or when skipcache=yes, always fetch from the source
-		insecure := r.URL.Query().Get("insecure") == "true"
-		client := HTTPClient
-		if insecure {
-			client = InsecureHTTPClient
-		}
 		var err error
 		collections, err = fetchCollectionsFromSBC(ctx, client, params)
 		if err != nil {
@@ -401,32 +399,14 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If icons are requested, enrich the collections data with them.
-	// This is done after the primary data retrieval to keep the initial load fast.
 	if params.showIcons {
 		err = enrichCollectionsWithIcons(ctx, w, collections, params)
 		if err != nil {
-			// As per user request, don't fail the whole request.
-			// The error will be logged and the icon fields will be empty or contain an error message.
-			log.Printf("Could not enrich collections with icons: %v", err)
-		}
-	}
-
-	// If icons are requested, enrich the collections data with them.
-	// This is done after the primary data retrieval to keep the initial load fast.
-	if params.showIcons {
-		err = enrichCollectionsWithIcons(ctx, w, collections, params)
-		if err != nil {
-			// As per user request, don't fail the whole request.
-			// The error will be logged and the icon fields will be empty or contain an error message.
 			log.Printf("Could not enrich collections with icons: %v", err)
 		}
 	}
 
 	w.Header().Set("Cache-Control", "max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("X-XSS-Protection", "1; mode=block")
 
 	switch params.output {
 	case "json", "":
@@ -494,7 +474,8 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 			chromedp.Flag("disable-gpu", true),
 			chromedp.Flag("no-sandbox", true),
 		)
-		allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
+		allocCtx, ac := chromedp.NewExecAllocator(context.Background(), opts...)
+		allocCancel = ac
 		chromedpContext, cancel = chromedp.NewContext(allocCtx)
 	})
 
@@ -551,7 +532,7 @@ func enrichCollectionsWithIcons(ctx context.Context, w http.ResponseWriter, coll
 		// Now, fetch and encode the icon
 		iconDataURI, cacheHit, cacheAge, err := getIcon(ctx, iconURL)
 		if err != nil {
-			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706 -- collectionType is scraped from SBC website HTML and newlines stripped
+			log.Printf("Failed to get icon for %s: %v", strings.ReplaceAll(collectionType, "\n", ""), err) // #nosec G706
 			collections.Collections[i].IconDataURI = fmt.Sprintf("Error: Failed to fetch or encode icon: %v", err)
 		} else {
 			collections.Collections[i].IconDataURI = iconDataURI

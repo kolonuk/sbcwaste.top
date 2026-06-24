@@ -272,6 +272,27 @@ a:hover {
     }
 }
 
+.validation-error {
+    color: #c0392b;
+    font-weight: bold;
+}
+
+@media (prefers-color-scheme: dark) {
+    .validation-error {
+        color: #ff6b6b;
+    }
+}
+
+.error-text {
+    color: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+    .error-text {
+        color: #ff6b6b;
+    }
+}
+
 /* Table Styles */
 table {
     width: 100%;
