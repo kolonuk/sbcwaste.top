@@ -106,53 +106,51 @@ document.addEventListener('DOMContentLoaded', () => {
         appleBtn.className = 'calendar-btn apple-btn';
         appleBtn.textContent = 'Add to Apple Calendar';
 
-            // Fetch and display upcoming collections
-            fetch(`${window.location.origin}/${uprn}/json`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data && data.collections && data.collections.length > 0) {
-                        const flattenedCollections = [];
-                        data.collections.forEach(collection => {
-                            collection.CollectionDates.forEach(dateStr => {
-                                const [year, month, day] = dateStr.split('-').map(Number);
-                                flattenedCollections.push({
-                                    date: new Date(year, month - 1, day),
-                                    type: collection.type
-                                });
+        // Fetch and display upcoming collections
+        fetch(`${window.location.origin}/${uprn}/json`)
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.collections && data.collections.length > 0) {
+                    const flattenedCollections = [];
+                    data.collections.forEach(collection => {
+                        collection.CollectionDates.forEach(dateStr => {
+                            const [year, month, day] = dateStr.split('-').map(Number);
+                            flattenedCollections.push({
+                                date: new Date(year, month - 1, day),
+                                type: collection.type
                             });
                         });
+                    });
 
-                        // Sort by date ascending
-                        flattenedCollections.sort((a, b) => a.date - b.date);
+                    flattenedCollections.sort((a, b) => a.date - b.date);
 
-                        const table = document.createElement('table');
-                        const thead = document.createElement('thead');
-                        thead.innerHTML = '<tr><th>Date</th><th>Description</th></tr>';
-                        table.appendChild(thead);
+                    const table = document.createElement('table');
+                    const thead = document.createElement('thead');
+                    thead.innerHTML = '<tr><th>Date</th><th>Description</th></tr>';
+                    table.appendChild(thead);
 
-                        const tbody = document.createElement('tbody');
-                        const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
-                        flattenedCollections.forEach(item => {
-                            const row = document.createElement('tr');
-                            const dateCell = document.createElement('td');
-                            dateCell.textContent = item.date.toLocaleDateString(undefined, options);
-                            const typeCell = document.createElement('td');
-                            typeCell.textContent = item.type;
-                            row.appendChild(dateCell);
-                            row.appendChild(typeCell);
-                            tbody.appendChild(row);
-                        });
-                        table.appendChild(tbody);
+                    const tbody = document.createElement('tbody');
+                    const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                    flattenedCollections.forEach(item => {
+                        const row = document.createElement('tr');
+                        const dateCell = document.createElement('td');
+                        dateCell.textContent = item.date.toLocaleDateString(undefined, options);
+                        const typeCell = document.createElement('td');
+                        typeCell.textContent = item.type;
+                        row.appendChild(dateCell);
+                        row.appendChild(typeCell);
+                        tbody.appendChild(row);
+                    });
+                    table.appendChild(tbody);
 
-                        upcomingCollectionsGrid.appendChild(table);
-                        upcomingCollectionsSection.style.display = 'block';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching upcoming collections:', error);
-                });
+                    upcomingCollectionsGrid.appendChild(table);
+                    upcomingCollectionsSection.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching upcoming collections:', error);
+            });
 
-        }
         const buttonsWrapper = document.createElement('div');
         buttonsWrapper.className = 'buttons-wrapper';
         buttonsWrapper.appendChild(googleBtn);
@@ -165,35 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const performSearch = () => {
         const query = addressSearch.value.trim();
-        if (query) {
-            searchResults.textContent = 'Searching...';
-            fetch(`search-address?q=${encodeURIComponent(query)}`)
-                .then(response => response.json())
-                .then(data => {
-                    searchResults.innerHTML = '';
-                    if (data && data.length > 0) {
-                        const ul = document.createElement('ul');
-                        data.forEach(item => {
-                            const li = document.createElement('li');
-                            li.innerHTML = `<strong>${item.address}</strong> (UPRN: ${item.uprn})`;
-                            li.dataset.uprn = item.uprn;
-                            li.addEventListener('click', () => {
-                                uprnIcsInput.value = item.uprn;
-                                generateIcsLink();
-                                // Optional: scroll to the upcoming collections section
-                                document.getElementById('upcoming-collections').scrollIntoView({ behavior: 'smooth' });
-                            });
-                            ul.appendChild(li);
-                        });
-                        searchResults.appendChild(ul);
-                    } else {
-                        searchResults.textContent = 'No results found.';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching search results:', error);
-                    searchResults.textContent = 'Failed to fetch results.';
-                });
         if (!query) {
             return;
         }
@@ -214,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         li.addEventListener('click', () => {
                             uprnIcsInput.value = item.uprn;
                             generateIcsLink();
-                            document.getElementById('ics-generator').scrollIntoView({ behavior: 'smooth' });
+                            document.getElementById('upcoming-collections').scrollIntoView({ behavior: 'smooth' });
                         });
                         ul.appendChild(li);
                     });
