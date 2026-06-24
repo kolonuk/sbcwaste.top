@@ -109,7 +109,7 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          $(go env GOPATH)/bin/govulncheck ./src/...
+          $(go env GOPATH)/bin/govulncheck -scan=module ./src/...
 
   trivy-fs:
     name: Scan code for vulnerabilities (Trivy FS)
