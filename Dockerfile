@@ -14,17 +14,11 @@ COPY src/ .
 # Build the Go program with static link for smaller size and no libc dependencies
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
-# Use a slim base image
-FROM debian:trixie-slim
+# Use distroless static image — no shell, no perl, no glibc, ca-certs included
+FROM gcr.io/distroless/static-debian13
 
 # Set working directory
 WORKDIR /app
-
-# Update the base image to include the latest security patches and CA certificates
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y ca-certificates && \
-    update-ca-certificates
 
 # Copy the compiled Go program from the builder stage
 COPY --from=builder /app/sbcwaste .
