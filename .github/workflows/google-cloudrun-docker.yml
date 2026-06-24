@@ -33,6 +33,10 @@ on:
       - dev
       - test
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   id-token: write
@@ -64,16 +68,16 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install eslint @eslint/js globals
-      - run: npx eslint static/script.js
+      - run: npm install
+      - run: npx eslint static/script.js static/costs.js
 
   unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    container: golang:1.24
+    container: golang:1.25
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
@@ -84,7 +88,7 @@ jobs:
   gosec:
     name: Run Gosec Security Scanner
     runs-on: ubuntu-latest
-    container: golang:1.24
+    container: golang:1.25
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
@@ -97,7 +101,7 @@ jobs:
   govulncheck:
     name: Run govulncheck
     runs-on: ubuntu-latest
-    container: golang:1.24
+    container: golang:1.25
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
@@ -105,7 +109,7 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          $(go env GOPATH)/bin/govulncheck ./src/...
+          cd src && $(go env GOPATH)/bin/govulncheck -scan=module
 
   trivy-fs:
     name: Scan code for vulnerabilities (Trivy FS)
@@ -115,7 +119,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Scan code for vulnerabilities
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -205,7 +209,7 @@ jobs:
           echo "Ensure the 'build' job pushed the image and 'docker pull' succeeded." >&2
           exit 1
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ needs.build.outputs.image_name }}
           format: 'table'
@@ -318,7 +322,7 @@ jobs:
         id: set-env
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "APP_ENV=prod" >> $GITHUB_ENV
+            echo "APP_ENV=production" >> $GITHUB_ENV
             echo "SERVICE=sbcwaste-prod" >> $GITHUB_ENV
             echo "DOMAIN=sbcwaste.top" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/dev" ]; then
@@ -351,13 +355,14 @@ jobs:
       - name: Verify Application Health
         run: |
           echo "Verifying application health for https://${{ env.DOMAIN }}"
-          # First, check the /health endpoint
+          health_success=false
           for i in {1..10}; do
             response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/health")
             if [ "$response_code" == "200" ]; then
               body=$(curl -s "https://${{ env.DOMAIN }}/health")
               if echo "$body" | grep -q '{"status": "ok"}'; then
                 echo "Health check successful on /health endpoint."
+                health_success=true
                 break
               else
                 echo "Attempt $i: /health endpoint is up, but response is not as expected. Waiting 30 seconds..."
@@ -368,25 +373,28 @@ jobs:
             sleep 30
           done
 
-          if [ $i -eq 10 ]; then
+          if [ "$health_success" != "true" ]; then
             echo "Health check on /health endpoint failed after several attempts."
             exit 1
           fi
 
-          # Second, check the root path to ensure the app is serving static assets
+          root_success=false
           for i in {1..10}; do
             response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/")
             if [ "$response_code" == "200" ]; then
               echo "Health check successful on root path."
-              exit 0
+              root_success=true
+              break
             else
               echo "Attempt $i: Root path not yet responding with 200 OK (Got $response_code). Waiting 30 seconds..."
             fi
             sleep 30
           done
 
-          echo "Health check on root path failed after several attempts."
-          exit 1
+          if [ "$root_success" != "true" ]; then
+            echo "Health check on root path failed after several attempts."
+            exit 1
+          fi
 
   cleanup-images:
     name: Clean up old container images
@@ -407,7 +415,6 @@ jobs:
         run: gcloud config set project ${{ env.PROJECT_ID }}
 
       - name: Clean up old images
-        continue-on-error: true
         run: |
           echo "Identifying images to clean up in ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}"
 
