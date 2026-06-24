@@ -3,44 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Find your Swindon Borough Council bin collection dates and add them to your calendar. Supports Google Calendar, Outlook, and Apple Calendar.">
+    <meta property="og:title" content="Swindon Bin Collection Calendar">
+    <meta property="og:description" content="Find your Swindon Borough Council bin collection dates and add them directly to your calendar.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
     <title>Swindon Waste Bin Collection Calendar</title>
     <link rel="stylesheet" href="style.css">
+</head>
 <body>
     <div class="container">
         <header>
             <h1>Swindon Bin Collection Calendar</h1>
             <p>Fed up of not knowing which bin is being collected this week? Get your bin collection dates from the Swindon Borough Council website and easily add them to your calendar.</p>
-            <p>This service uses data from the official <a id="sbc-website-link" href="https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days" target="_blank">Swindon Borough Council website</a>.</p>
-            <p>This service is dependant on the council's website working properly - if you have any issues with this, your first step should be to check their own website above.</p>
+            <p>This service uses data from the official <a id="sbc-website-link" href="https://www.swindon.gov.uk/info/20122/rubbish_and_recycling_collection_days" target="_blank" rel="noopener noreferrer">Swindon Borough Council website</a>.</p>
+            <p>This service is dependent on the council's website working properly - if you have any issues with this, your first step should be to check their own website above.</p>
         </header>
 
         <section id="address-lookup">
             <h2>1. Find Your Address</h2>
-            <p>To get your collection schedule, we first need to find your property's <strong>Unique Property Reference Number (UPRN)</strong>. A UPRN is a unique identifier for every addressable location in Great Britain. You can <a href="https://www.geoplace.co.uk/addresses-streets/location-data/the-uprn" target="_blank">learn more about UPRNs on the GeoPlace website</a>.</p>
+            <p>To get your collection schedule, we first need to find your property's <strong>Unique Property Reference Number (UPRN)</strong>. A UPRN is a unique identifier for every addressable location in Great Britain. You can <a href="https://www.geoplace.co.uk/addresses-streets/location-data/the-uprn" target="_blank" rel="noopener noreferrer">learn more about UPRNs on the GeoPlace website</a>.</p>
             <p>Enter your postcode or street name below to find your UPRN.</p>
             <input type="text" id="address-search" placeholder="Enter your postcode or street name">
             <button id="search-btn">Search</button>
             <div id="search-results"></div>
         </section>
 
+        <section id="upcoming-collections" style="display: none;">
+            <h2>2. Upcoming Collections</h2>
+            <div id="upcoming-collections-grid"></div>
+        </section>
+
         <section id="ics-generator">
-            <h2>2. Generate Your Calendar Link</h2>
+            <h2>3. Generate Your Calendar Link</h2>
             <p>Once you've found your UPRN from the search results, enter it below to generate a personal calendar link.</p>
-            <p>This link uses the iCalendar (ICS) format, a standard way to share calendar information. You can learn more about it on <a href="https://en.wikipedia.org/wiki/ICalendar" target="_blank">Wikipedia</a>.</p>
-            <input type="text" id="uprn-ics-input" placeholder="Enter your UPRN here">
+            <p>This link uses the iCalendar (ICS) format, a standard way to share calendar information. You can learn more about it on <a href="https://en.wikipedia.org/wiki/ICalendar" target="_blank" rel="noopener noreferrer">Wikipedia</a>.</p>
+            <input type="text" id="uprn-ics-input" placeholder="Enter your UPRN here" pattern="[0-9]{1,20}" inputmode="numeric">
             <button id="generate-ics-btn">Generate Link</button>
             <div id="ics-link-container"></div>
             <div id="ics-actions-container"></div>
         </section>
 
         <section id="calendar-instructions">
-            <h2>3. Add to Your Calendar</h2>
+            <h2>4. Add to Your Calendar</h2>
             <p>Follow these simple instructions to add the generated link to your favorite calendar app.</p>
             <details>
                 <summary>Google Calendar</summary>
                 <ol>
-                    <li>On your computer, open <a href="https://calendar.google.com" target="_blank">Google Calendar</a>.</li>
-                    <li>On the left, next to "Other calendars," click the `+` icon and select "From URL."</li>
+                    <li>On your computer, open <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer">Google Calendar</a>.</li>
+                    <li>On the left, next to "Other calendars," click the <code>+</code> icon and select "From URL."</li>
                     <li>Paste your generated calendar link into the field.</li>
                     <li>Click "Add calendar." It will now appear in your calendar list.</li>
                 </ol>
@@ -86,8 +97,8 @@
 
         <section id="support">
             <h2>Support the Project</h2>
-            <p>This is an open-source project that started as a personal tool to keep track of my own bin collection days. I decided to open it up for everyone to use. If you find it useful and want to contribute, or if you've found an issue, please check out the project on <a href="https://github.com/kolonuk/sbcwaste.top">GitHub</a>.</p>
-            <p>If you'd like to show your appreciation, you can <a href="https://paypal.me/kolonuk" target="_blank">send me some funds</a>!</p>
+            <p>This is an open-source project that started as a personal tool to keep track of my own bin collection days. I decided to open it up for everyone to use. If you find it useful and want to contribute, or if you've found an issue, please check out the project on <a href="https://github.com/kolonuk/sbcwaste.top" rel="noopener noreferrer">GitHub</a>.</p>
+            <p>If you'd like to show your appreciation, you can <a href="https://paypal.me/kolonuk" target="_blank" rel="noopener noreferrer">send me some funds</a>!</p>
         </section>
 
         <div class="disclaimer">
