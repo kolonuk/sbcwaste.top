@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         icsLinkContainer.innerHTML = '';
         icsActionsContainer.innerHTML = '';
+        const upcomingCollectionsGrid = document.getElementById('upcoming-collections-grid');
+        const upcomingCollectionsSection = document.getElementById('upcoming-collections');
+        upcomingCollectionsGrid.innerHTML = '';
+        upcomingCollectionsSection.style.display = 'none';
 
         if (!uprn) {
             return;
@@ -102,6 +106,51 @@ document.addEventListener('DOMContentLoaded', () => {
         appleBtn.className = 'calendar-btn apple-btn';
         appleBtn.textContent = 'Add to Apple Calendar';
 
+        // Fetch and display upcoming collections
+        fetch(`${window.location.origin}/${uprn}/json`)
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.collections && data.collections.length > 0) {
+                    const flattenedCollections = [];
+                    data.collections.forEach(collection => {
+                        collection.CollectionDates.forEach(dateStr => {
+                            const [year, month, day] = dateStr.split('-').map(Number);
+                            flattenedCollections.push({
+                                date: new Date(year, month - 1, day),
+                                type: collection.type
+                            });
+                        });
+                    });
+
+                    flattenedCollections.sort((a, b) => a.date - b.date);
+
+                    const table = document.createElement('table');
+                    const thead = document.createElement('thead');
+                    thead.innerHTML = '<tr><th>Date</th><th>Description</th></tr>';
+                    table.appendChild(thead);
+
+                    const tbody = document.createElement('tbody');
+                    const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                    flattenedCollections.forEach(item => {
+                        const row = document.createElement('tr');
+                        const dateCell = document.createElement('td');
+                        dateCell.textContent = item.date.toLocaleDateString(undefined, options);
+                        const typeCell = document.createElement('td');
+                        typeCell.textContent = item.type;
+                        row.appendChild(dateCell);
+                        row.appendChild(typeCell);
+                        tbody.appendChild(row);
+                    });
+                    table.appendChild(tbody);
+
+                    upcomingCollectionsGrid.appendChild(table);
+                    upcomingCollectionsSection.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching upcoming collections:', error);
+            });
+
         const buttonsWrapper = document.createElement('div');
         buttonsWrapper.className = 'buttons-wrapper';
         buttonsWrapper.appendChild(googleBtn);
@@ -134,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         li.addEventListener('click', () => {
                             uprnIcsInput.value = item.uprn;
                             generateIcsLink();
-                            document.getElementById('ics-generator').scrollIntoView({ behavior: 'smooth' });
+                            document.getElementById('upcoming-collections').scrollIntoView({ behavior: 'smooth' });
                         });
                         ul.appendChild(li);
                     });
