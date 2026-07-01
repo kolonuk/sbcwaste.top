@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const upcomingCollectionsGrid = document.getElementById('upcoming-collections-grid');
         const upcomingCollectionsSection = document.getElementById('upcoming-collections');
         upcomingCollectionsGrid.innerHTML = '';
-        upcomingCollectionsSection.style.display = 'none';
+        upcomingCollectionsSection.classList.add('hidden');
 
         if (!uprn) {
             return;
@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     table.appendChild(tbody);
 
                     upcomingCollectionsGrid.appendChild(table);
-                    upcomingCollectionsSection.style.display = 'block';
+                    upcomingCollectionsSection.classList.remove('hidden');
                 }
             })
             .catch(error => {
