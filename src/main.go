@@ -32,6 +32,7 @@ func main() {
 	mux.Handle("/.well-known/security.txt", http.HandlerFunc(serveSecurityTxt))
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
+	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
 	// Add the new file server handler.
 	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("./static"))))
 	mux.Handle("/", rootHandler(fileServer))
