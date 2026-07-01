@@ -21,9 +21,28 @@ type visitor struct {
 var visitors = make(map[string]*visitor)
 var mu sync.Mutex
 
+// maxVisitors caps the visitors map to bound memory use if a burst of
+// distinct IPs shows up faster than cleanupVisitors can reap stale entries.
+const maxVisitors = 100000
+
 // init runs a background goroutine to clean up old entries from the visitors map.
 func init() {
 	go cleanupVisitors()
+}
+
+// evictOldestLocked removes the least-recently-seen visitor. Caller must hold mu.
+func evictOldestLocked() {
+	var oldestIP string
+	var oldestSeen time.Time
+	for ip, v := range visitors {
+		if oldestIP == "" || v.lastSeen.Before(oldestSeen) {
+			oldestIP = ip
+			oldestSeen = v.lastSeen
+		}
+	}
+	if oldestIP != "" {
+		delete(visitors, oldestIP)
+	}
 }
 
 // getVisitor returns the rate limiter for the current visitor.
@@ -33,6 +52,9 @@ func getVisitor(ip string) *rate.Limiter {
 
 	v, exists := visitors[ip]
 	if !exists {
+		if len(visitors) >= maxVisitors {
+			evictOldestLocked()
+		}
 		// Allow 10 requests per minute, with a burst of 5.
 		limiter := rate.NewLimiter(rate.Every(time.Minute/10), 5)
 		visitors[ip] = &visitor{limiter, time.Now()}
@@ -73,8 +95,9 @@ func rateLimit(next http.Handler) http.Handler {
 		// The `X-Forwarded-For` header is the standard for identifying the
 		// originating IP address of a client connecting through a proxy like
 		// the one used by Google Cloud Run.
-		ip := r.Header.Get("X-Forwarded-For")
-		if ip == "" {
+		xff := r.Header.Get("X-Forwarded-For")
+		var ip string
+		if xff == "" {
 			// If the header is not present, fall back to RemoteAddr.
 			// This is useful for local development.
 			var err error
@@ -85,9 +108,12 @@ func rateLimit(next http.Handler) http.Handler {
 				return
 			}
 		} else {
-			// X-Forwarded-For can be a comma-separated list of IPs. The first one is the client's.
-			ips := strings.Split(ip, ",")
-			ip = strings.TrimSpace(ips[0])
+			// X-Forwarded-For can be a comma-separated list of IPs appended to by each
+			// proxy hop. A client can freely forge its own entries at the front of this
+			// list, so the only entry that can be trusted is the last one, which Cloud
+			// Run's front end appends itself and reflects the real connecting peer.
+			ips := strings.Split(xff, ",")
+			ip = strings.TrimSpace(ips[len(ips)-1])
 		}
 
 		// Get the rate limiter for the current IP address.
