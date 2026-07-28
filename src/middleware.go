@@ -85,12 +85,6 @@ func cleanupVisitors() {
 // rateLimit is a middleware that limits requests per IP address.
 func rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Do not rate limit the main page, the help page, or static assets
-		if r.URL.Path == "/" || r.URL.Path == "/api/help" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		// Get the IP address for the request.
 		// The `X-Forwarded-For` header is the standard for identifying the
 		// originating IP address of a client connecting through a proxy like

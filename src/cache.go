@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/oauth2/google"
 )
 
 // Cache interface defines the methods for a cache
@@ -127,9 +129,19 @@ type FirestoreCacheItem struct {
 
 // NewFirestoreCache creates a new FirestoreCache
 func NewFirestoreCache(ctx context.Context) (*FirestoreCache, error) {
-	projectID := os.Getenv("PROJECT_ID")
+	projectID := strings.TrimSpace(os.Getenv("PROJECT_ID"))
 	if projectID == "" {
-		log.Println("PROJECT_ID environment variable not set.")
+		return nil, fmt.Errorf("PROJECT_ID environment variable not set")
+	}
+	if strings.HasPrefix(projectID, "dummy-") {
+		return nil, fmt.Errorf("project ID %q is not a real Firestore project", projectID)
+	}
+
+	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" {
+		_, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return nil, fmt.Errorf("firestore credentials not configured: %w", err)
+		}
 	}
 
 	client, err := firestore.NewClient(ctx, projectID)
