@@ -1,5 +1,5 @@
 # Use the official Go image to build the Go program
-FROM golang:1.25 AS builder
+FROM golang:1.26 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -14,8 +14,9 @@ COPY src/ .
 # Build the Go program with static link for smaller size and no libc dependencies
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sbcwaste .
 
-# Use distroless static image — no shell, no perl, no glibc, ca-certs included
-FROM gcr.io/distroless/static-debian13
+# Use distroless static image — no shell, no perl, no glibc, ca-certs included.
+# The :nonroot tag runs as UID 65532 instead of root.
+FROM gcr.io/distroless/static-debian13:nonroot
 
 # Set working directory
 WORKDIR /app
