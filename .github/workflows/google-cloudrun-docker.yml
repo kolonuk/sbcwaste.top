@@ -111,7 +111,13 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-          cd src && $(go env GOPATH)/bin/govulncheck -scan=module
+          # Symbol-level (reachability) scan instead of -scan=module: module scan
+          # flags any vulnerable package present in the dependency graph regardless
+          # of whether it's actually called, which permanently fails on
+          # golang.org/x/crypto/openpgp (GO-2026-5932, "Fixed in: N/A", unmaintained
+          # package we never import). Symbol scan correctly limits findings to code
+          # reachable from main().
+          cd src && $(go env GOPATH)/bin/govulncheck ./...
 
   trivy-fs:
     name: Scan code for vulnerabilities (Trivy FS)
