@@ -41,6 +41,7 @@ type Collections struct {
 	Collections []Collection `json:"collections" xml:"collection" yaml:"collections"`
 	Address     string       `json:"address" xml:"address" yaml:"address"`
 	CacheInfo   *CacheInfo   `json:"cacheInfo,omitempty" xml:"cacheInfo,omitempty" yaml:"cacheInfo,omitempty"`
+	Version     string       `json:"version,omitempty" xml:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // CacheInfo holds statistics about the cache
@@ -57,6 +58,7 @@ type requestParams struct {
 	showIcons      bool
 	skipCache      bool
 	showCacheStats bool
+	showVersion    bool
 }
 
 var (
@@ -144,6 +146,7 @@ func parseRequestParams(r *http.Request) (*requestParams, error) {
 	params.showIcons = r.URL.Query().Get("icons") == "yes"
 	params.skipCache = r.URL.Query().Get("skipcache") == "yes" && os.Getenv("APP_ENV") != "production"
 	params.showCacheStats = r.URL.Query().Get("cachestats") == "yes"
+	params.showVersion = r.URL.Query().Get("version") == "yes"
 
 	return params, nil
 }
@@ -410,6 +413,10 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if params.showVersion {
+		collections.Version = fullVersion()
+	}
+
 	w.Header().Set("Cache-Control", "max-age=3600")
 
 	switch params.output {
@@ -466,6 +473,7 @@ func showHelp(w http.ResponseWriter) {
 	fmt.Fprintln(w, "<ul>")
 	fmt.Fprintln(w, "<li><b>?debug=yes</b>: Enable debug logging.</li>")
 	fmt.Fprintln(w, "<li><b>?icons=yes</b>: Include base64-encoded icon data in the output (JSON, XML, YAML only).</li>")
+	fmt.Fprintln(w, "<li><b>?version=yes</b>: Include the running service version in the output (JSON, XML, YAML only). See also <code>/api/version</code>.</li>")
 	fmt.Fprintln(w, "</ul>")
 }
 
