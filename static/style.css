@@ -120,6 +120,20 @@ summary {
     font-weight: bold;
 }
 
+#costs-tree summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#costs-tree .year-total {
+    font-weight: normal;
+}
+
+#costs-tree table {
+    margin-top: 10px;
+}
+
 ul {
     list-style: none;
     padding: 0;
