@@ -45,7 +45,8 @@ func TestSearchAddressHandler_Success_Integration(t *testing.T) {
 			SearchAddressHandler(rr, req)
 
 			if rr.Code != http.StatusOK {
-				t.Errorf("expected status %d; got %d", http.StatusOK, rr.Code)
+				warnOrFailOnExternalBlock(t, "expected status %d; got %d", http.StatusOK, rr.Code)
+				return
 			}
 
 			// The response should not contain any HTML tags.
