@@ -28,4 +28,4 @@ One row per notable change, oldest first. "kolonuk" and "John Wood" are the same
 | 1.4.196 | 2026-07-01 | Rate-limiter and billing-route hardening | kolonuk, Claude |
 | 1.4.214 | 2026-07-28 | Container hardening; billing CSV/cost-tree UI added | kolonuk, Claude |
 | 1.5.217 | 2026-07-29 | **MINOR bump** — Docker Hub image mirror + local dev workflow added; lint skill added | kolonuk, Claude |
-| 1.6.0 | 2026-07-29 | **MINOR bump** — semantic versioning system added: VERSION file, `/api/version` endpoint, version footer, this changelog, `version` skill | kolonuk, Claude |
+| 1.6.224 | 2026-07-29 | **MINOR bump** — semantic versioning system added: VERSION file, `/api/version` endpoint, version footer, this changelog, `version` skill | kolonuk, Claude |

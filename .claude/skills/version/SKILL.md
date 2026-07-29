@@ -37,24 +37,22 @@ If unsure whether a change clears the bar, ask the user rather than guessing.
 2. Increment MINOR by 1 (e.g. `1.0` → `1.1`). Leave MAJOR untouched.
 3. Write the new value back to `VERSION` (single line, no trailing content
    beyond the newline).
-4. Add a new entry at the top of `CHANGELOG.md`, immediately below the
-   `## Versioning scheme` section and above whatever entry is currently
-   first (newest-first ordering for real, tracked releases — the
-   `Pre-1.0 history` section below them stays as-is, don't touch it).
-   Use this shape:
+4. Add a new row to the **bottom** of the table in `CHANGELOG.md` (the table
+   is oldest-first, so the newest release goes last):
 
    ```markdown
-   ## [MAJOR.MINOR.0] - YYYY-MM-DD
-
-   One-paragraph description of what was added and why it's MINOR-worthy.
-
-   Author: <name>. AI-assisted by <model/agent name>, if applicable.
+   | MAJOR.MINOR.BUILD | YYYY-MM-DD | **MINOR bump** — brief description of what was added | Author(s) |
    ```
 
-   Use today's date. The `.0` placeholder for BUILD in the heading is
-   intentional — the real build number isn't known until CI actually builds
-   this commit; note that explicitly in the entry if it'd otherwise be
-   confusing.
+   Use today's date. **BUILD must be the real commit count, never a
+   placeholder like `.0`** — every other row in the table uses the actual
+   `git rev-list --count` of its commit, and a `.0` would be the only row
+   that doesn't, which is inconsistent and confusing (this has been gotten
+   wrong before). To get the real number: run `git rev-list --count HEAD`
+   immediately before committing, then add 1 for the commit you're about to
+   create (assuming nothing else lands in between — re-check right before
+   `git commit` if there's any chance of that). Don't guess or reuse an old
+   count.
 5. Stage `VERSION` and `CHANGELOG.md` together with the feature's own code
    changes (don't make the version bump a separate, unrelated commit) unless
    the user asks otherwise.
@@ -62,5 +60,7 @@ If unsure whether a change clears the bar, ask the user rather than guessing.
 ## Steps to bump MAJOR (only when explicitly requested)
 
 Same as above, except: increment MAJOR by 1, reset MINOR to `0`
-(e.g. `1.4` → `2.0`), and say plainly in the CHANGELOG entry why this is a
-major version (what's breaking or what the re-launch represents).
+(e.g. `1.4` → `2.0`), and say plainly in the CHANGELOG row why this is a
+major version (what's breaking or what the re-launch represents). BUILD
+still uses the real commit count, same rule as above — MAJOR/MINOR reset,
+BUILD never does.
