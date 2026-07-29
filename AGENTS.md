@@ -6,6 +6,16 @@ When researching issues or making changes, always perform the following security
 - **Go Vulnerabilities:** Run `govulncheck ./...` (or `./src/...`) to identify Go-specific vulnerabilities.
 - **General Vulnerabilities:** Run `trivy fs .` to scan the entire filesystem for security issues.
 
+## Before Committing or Pushing (any branch)
+
+Run the local `lint` skill (`.claude/skills/lint/SKILL.md`) before every
+commit or push — build, vet, tests, eslint, and, whenever a
+`.github/workflows/*.yml` file changed, `actionlint`. Plain YAML/schema
+validators pass workflow files that GitHub's Actions runner then rejects at
+push time (e.g. the `secrets` context is invalid in a job-level `if:`, valid
+only at step level) — only `actionlint` catches that before push, and it has
+already caused one failed `main` deploy in this repo.
+
 ### Version Changes
 
 **Before changing any version numbers** (Go version, dependencies, actions, etc.), always:
