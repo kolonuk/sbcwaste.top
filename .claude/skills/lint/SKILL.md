@@ -45,7 +45,7 @@ regression.)
 ## 3. JS lint + dependency audit (matches the `validate-js` CI job)
 
 ```sh
-npx eslint static/script.js static/costs.js
+npx eslint static/script.js static/costs.js static/version.js
 npm audit --audit-level=high
 ```
 
