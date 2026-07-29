@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -33,6 +34,7 @@ func main() {
 	mux.Handle("/search-address", http.HandlerFunc(SearchAddressHandler))
 	mux.Handle("/health", http.HandlerFunc(healthCheckHandler))
 	mux.Handle("/api/costs", http.HandlerFunc(BillingHandler))
+	mux.Handle("/api/version", http.HandlerFunc(versionHandler))
 	// Add the new file server handler.
 	fileServer := Gzip(cacheControlMiddleware(http.FileServer(http.Dir("./static"))))
 	mux.Handle("/", rootHandler(fileServer))
@@ -82,6 +84,16 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
 		log.Printf("Failed to write health check response: %v", err)
+	}
+}
+
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"version": fullVersion(),
+		"commit":  commitSHA,
+	}); err != nil {
+		log.Printf("Failed to write version response: %v", err)
 	}
 }
 

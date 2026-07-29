@@ -65,6 +65,43 @@ func TestHealthCheckHandler(t *testing.T) {
 	}
 }
 
+func TestVersionHandler(t *testing.T) {
+	req, err := http.NewRequest("GET", "/api/version", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(versionHandler)
+
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	expectedContentType := "application/json"
+	if contentType := rr.Header().Get("Content-Type"); contentType != expectedContentType {
+		t.Errorf("handler returned wrong content type: got %v want %v",
+			contentType, expectedContentType)
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("handler returned invalid JSON: %v", err)
+	}
+
+	if response["version"] != fullVersion() {
+		t.Errorf("handler returned wrong version: got %v want %v",
+			response["version"], fullVersion())
+	}
+
+	if _, ok := response["commit"]; !ok {
+		t.Errorf("handler response missing commit field: got %v", response)
+	}
+}
+
 func TestRootHandler(t *testing.T) {
 	// Mock file server handler that returns a specific header so we know it was called
 	mockFileServer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
