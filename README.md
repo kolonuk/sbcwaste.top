@@ -59,7 +59,61 @@ To clear the Firestore cache in the cloud environment, you can delete the docume
 2.  **Run the application:** `go run ./src`
 3.  **Run tests:** `go test ./src/...`
 
-Requires Go 1.26+ (see `go.mod`).
+Requires Go 1.26+ (see `go.mod`). Set `APP_ENV=development` so the app uses
+the local SQLite cache instead of trying to reach Firestore (see
+[Local Development](#local-development)) — or use Docker (below), which sets
+this for you.
+
+Note: `github.com/mattn/go-sqlite3` requires cgo. Running `go run ./src` (or
+`go build`) directly on the host works out of the box as long as your Go
+toolchain has cgo enabled (the default) and a C compiler is available. If
+`CGO_ENABLED=0` is set in your environment, SQLite calls will fail at
+runtime — the production `Dockerfile` deliberately disables cgo for this
+reason and only runs against Firestore (see [Docker](#docker) below).
+
+## Docker
+
+### Local development (SQLite)
+
+The included `Dockerfile.dev` and `docker-compose.yml` run the app with cgo
+enabled and `APP_ENV=development` set by default, so it always uses the
+local SQLite cache — no GCP project or credentials required.
+
+```sh
+docker compose up --build
+```
+
+This:
+
+-   Builds from `Dockerfile.dev` (a `golang:1.26` image with cgo enabled,
+    running `go run ./src` — not the production distroless image).
+-   Serves the app at [http://localhost:8080](http://localhost:8080).
+-   Bind-mounts the repo into the container, so `sbcwaste.db` is created in
+    the project root exactly as it would be with a plain `go run ./src` on
+    the host, and code edits are picked up without rebuilding the image
+    (just restart the container: `docker compose restart`).
+-   Caches Go modules/build output in named volumes (`go-mod-cache`,
+    `go-build-cache`) so repeated `docker compose up --build` runs don't
+    re-download dependencies.
+
+Stop it with `docker compose down` (add `-v` to also drop the module/build
+cache volumes). To clear the SQLite cache, delete `sbcwaste.db` as described
+above.
+
+Note: the icon-scraping feature (`?icons=yes`) needs a Chrome/Chromium
+binary that isn't installed in this image (see
+[Known Issues](#known-issues)); requests without `?icons=yes` are
+unaffected. BigQuery-backed billing data (`/api/costs`) also isn't
+reachable without GCP credentials — it falls back to the historical CSV in
+`static/data/billing_data.csv`.
+
+### Production image
+
+The production image (built from the root `Dockerfile`) is what CI builds
+and deploys to Cloud Run, and is also mirrored to Docker Hub for `main` —
+see [Notes](#notes). You generally shouldn't need to build it locally, but
+`docker build -t sbcwaste .` works if you want to inspect it; it won't serve
+useful data without `APP_ENV`/`PROJECT_ID`/Firestore credentials configured.
 
 ## Known Issues
 
@@ -81,5 +135,5 @@ Requires Go 1.26+ (see `go.mod`).
 *   The application uses a local SQLite database (`sbcwaste.db`) for caching in development. This file is git-ignored.
 *   The compiled binary (`sbcwaste`) is also git-ignored.
 *   The application uses `chromedp` for the icons feature. For **local development only**, you'll need Chrome/Chromium installed (e.g. `sudo apt install -y chromium-browser` on Ubuntu) — the deployed container does not have this, see [Known Issues](#known-issues).
-*   The application can be containerised using the provided `Dockerfile` (multi-stage build on `golang:1.26`, running as non-root on `gcr.io/distroless/static-debian13:nonroot`).
-*   The CI/CD pipeline is defined in `.github/workflows/google-cloudrun-docker.yml` (build, lint, unit tests, gosec, govulncheck, Trivy, deploy to Cloud Run, post-deploy health check).
+*   The production image is built from the provided `Dockerfile` (multi-stage build on `golang:1.26`, running as non-root on `gcr.io/distroless/static-debian13:nonroot`). For local development, use `Dockerfile.dev` / `docker-compose.yml` instead — see [Docker](#docker).
+*   The CI/CD pipeline is defined in `.github/workflows/google-cloudrun-docker.yml` (build, lint, unit tests, gosec, govulncheck, Trivy, deploy to Cloud Run, post-deploy health check, and — for `main` only, once deploy succeeds — mirroring the image to Docker Hub).

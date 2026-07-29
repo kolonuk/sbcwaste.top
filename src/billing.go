@@ -27,8 +27,9 @@ const (
 
 // CostData represents the monthly cost data.
 type CostData struct {
-	YearMonth string  `json:"year_month"`
-	TotalCost float64 `json:"total_cost"`
+	YearMonth string  `json:"year_month" bigquery:"year_month"`
+	TotalCost float64 `json:"total_cost" bigquery:"total_cost"`
+	Note      string  `json:"note,omitempty"`
 }
 
 // billingCache holds the cached billing data and its expiry time.
@@ -69,40 +70,18 @@ func BillingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // fetchAndMergeBillingData fetches historical data from CSV and current data from BigQuery,
-// then merges them into a single, sorted list.
+// then merges them into a single, sorted list. The CSV is the durable source of truth: once
+// a month has been recorded there (typically by the CSV-update workflow, after the month has
+// closed), BigQuery is no longer consulted for it. BigQuery only fills in months the CSV
+// doesn't have yet - in practice the current, still-open month.
 var fetchAndMergeBillingData = func(ctx context.Context) ([]CostData, error) {
-	// 1. Fetch historical data from CSV.
 	csvData, err := fetchBillingDataFromCSV()
 	if err != nil {
 		// Log the error but continue, as we might still get data from BigQuery.
 		log.Printf("WARN: Could not fetch billing data from CSV, proceeding with BigQuery only: %v", err)
 	}
 
-	// 2. Determine the start date for the BigQuery query.
-	var startDate time.Time
-	if len(csvData) > 0 {
-		// Find the latest month in the CSV data.
-		latestMonth := ""
-		for _, item := range csvData {
-			if item.YearMonth > latestMonth {
-				latestMonth = item.YearMonth
-			}
-		}
-
-		// Start the BigQuery query from the month *after* the latest one in the CSV.
-		latestDate, err := time.Parse("2006-01", latestMonth)
-		if err != nil {
-			return nil, fmt.Errorf("could not parse latest month from CSV: %w", err)
-		}
-		startDate = latestDate.AddDate(0, 1, 0)
-	} else {
-		// If there's no CSV data, fetch everything from the beginning of the project.
-		// Replace with a more appropriate start date if needed.
-		startDate = time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	}
-
-	// 3. Fetch current data from BigQuery from the calculated start date onwards.
-	bqData, err := fetchBillingData(ctx, startDate)
+	bqData, err := fetchBillingData(ctx)
 	if err != nil {
 		// If CSV data is also empty, this is a fatal error.
 		if len(csvData) == 0 {
@@ -112,28 +91,31 @@ var fetchAndMergeBillingData = func(ctx context.Context) ([]CostData, error) {
 		log.Printf("WARN: Could not fetch billing data from BigQuery, proceeding with CSV data only: %v", err)
 	}
 
-	// 4. Merge the two datasets.
-	// Use a map to handle overwrites, ensuring BigQuery data for a given month replaces CSV data.
+	return mergeCostData(csvData, bqData), nil
+}
+
+// mergeCostData merges CSV and BigQuery cost data into a single list sorted by month,
+// descending. The CSV always wins on a month present in both, since it's the durable,
+// version-controlled record; BigQuery only supplies months the CSV hasn't recorded yet.
+func mergeCostData(csvData, bqData []CostData) []CostData {
 	mergedData := make(map[string]CostData)
-	for _, item := range csvData {
-		mergedData[item.YearMonth] = item
-	}
 	for _, item := range bqData {
 		mergedData[item.YearMonth] = item
 	}
+	for _, item := range csvData {
+		mergedData[item.YearMonth] = item
+	}
 
-	// 5. Convert map back to a slice.
-	var results []CostData
+	results := make([]CostData, 0, len(mergedData))
 	for _, item := range mergedData {
 		results = append(results, item)
 	}
 
-	// 6. Sort the results by month in descending order.
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].YearMonth > results[j].YearMonth
 	})
 
-	return results, nil
+	return results
 }
 
 // fetchBillingDataFromCSV reads billing data from the local CSV file.
@@ -156,12 +138,19 @@ func fetchBillingDataFromCSV() ([]CostData, error) {
 		return nil, fmt.Errorf("could not read header from csv: %w", err)
 	}
 
-	yearMonthIndex, totalCostIndex := -1, -1
+	// The note column is optional, and rows may omit trailing empty fields entirely
+	// (e.g. "2024-08,0.31" with no third field), so ragged rows must be allowed.
+	reader.FieldsPerRecord = -1
+
+	yearMonthIndex, totalCostIndex, noteIndex := -1, -1, -1
 	for i, colName := range header {
-		if colName == "year_month" {
+		switch colName {
+		case "year_month":
 			yearMonthIndex = i
-		} else if colName == "total_cost" {
+		case "total_cost":
 			totalCostIndex = i
+		case "note":
+			noteIndex = i
 		}
 	}
 
@@ -185,16 +174,22 @@ func fetchBillingDataFromCSV() ([]CostData, error) {
 			continue
 		}
 
-		results = append(results, CostData{
+		item := CostData{
 			YearMonth: record[yearMonthIndex],
 			TotalCost: cost,
-		})
+		}
+		if noteIndex != -1 && noteIndex < len(record) {
+			item.Note = record[noteIndex]
+		}
+		results = append(results, item)
 	}
 	return results, nil
 }
 
-// fetchBillingData queries BigQuery for monthly cost data from a specific start date.
-func fetchBillingData(ctx context.Context, startDate time.Time) ([]CostData, error) {
+// fetchBillingData queries BigQuery for all available monthly cost data. It is not date-filtered:
+// the CSV is the priority source (see mergeCostData), so BigQuery is only ever used for months
+// the CSV doesn't have yet, and the billing export dataset for a small project is cheap to scan in full.
+func fetchBillingData(ctx context.Context) ([]CostData, error) {
 	client, err := bigquery.NewClient(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("bigquery.NewClient: %v", err)
@@ -211,15 +206,11 @@ func fetchBillingData(ctx context.Context, startDate time.Time) ([]CostData, err
 		  FORMAT_DATE("%%Y-%%m", usage_start_time) AS year_month,
 		  ROUND(SUM(cost), 2) AS total_cost
 		FROM `+"`%s.%s.%s`"+`
-		WHERE usage_start_time >= @startDate
 		GROUP BY 1
 		ORDER BY 1 DESC
 	`, projectID, datasetID, tableName)
 
 	q := client.Query(queryStr)
-	q.Parameters = []bigquery.QueryParameter{
-		{Name: "startDate", Value: startDate},
-	}
 
 	it, err := q.Read(ctx)
 	if err != nil {
@@ -238,7 +229,7 @@ func fetchBillingData(ctx context.Context, startDate time.Time) ([]CostData, err
 		}
 		results = append(results, row)
 	}
-	log.Printf("Fetched %d records from BigQuery for dates >= %s.", len(results), startDate.Format("2006-01-02"))
+	log.Printf("Fetched %d records from BigQuery.", len(results))
 	return results, nil
 }
 

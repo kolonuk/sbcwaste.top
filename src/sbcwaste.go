@@ -66,6 +66,7 @@ var (
 	allocCancel     context.CancelFunc
 	uprnRegex       = regexp.MustCompile("^[0-9]{1,20}$")
 	cssUrlRegex     = regexp.MustCompile(`url\(['"]?([^'"]+)['"]?\)`)
+	errCacheMiss    = errors.New("cache miss")
 )
 
 func shutdownSbcwasteChromedp() {
@@ -331,11 +332,14 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 	if useCache {
 		_, err := func() (time.Time, error) {
 			cachedBytes, created, err := cache.Get(params.uprn)
-			if err != nil || cachedBytes == nil {
+			if cachedBytes == nil {
 				if params.debugging {
 					log.Printf("Cache miss for UPRN: %s", strings.ReplaceAll(params.uprn, "\n", "")) // #nosec G706
 				}
-				return time.Time{}, err
+				if err != nil {
+					return time.Time{}, err
+				}
+				return time.Time{}, errCacheMiss
 			}
 
 			if err := json.Unmarshal(cachedBytes, &collections); err != nil {
