@@ -1,0 +1,30 @@
+# Local development image — NOT used for production/dev/test deployments
+# (those are built from the root `Dockerfile`, see .github/workflows/google-cloudrun-docker.yml).
+#
+# Differences from the production Dockerfile:
+#   - CGO stays enabled (the default for `golang:1.26`), because the SQLite
+#     driver (github.com/mattn/go-sqlite3) requires cgo to do anything other
+#     than return a stub error at runtime.
+#   - APP_ENV defaults to "development" so the app picks the local SQLite
+#     cache (./sbcwaste.db) instead of trying to reach Firestore/BigQuery,
+#     which would otherwise fail without GCP credentials.
+#   - Runs via `go run` for a fast edit/run loop instead of building a static
+#     binary into a distroless image.
+FROM golang:1.26
+
+WORKDIR /app
+
+# Cached separately from source so `go mod download` only reruns when
+# dependencies actually change.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY src/ ./src
+COPY static/ ./static
+
+ENV APP_ENV=development
+ENV PORT=8080
+
+EXPOSE 8080
+
+CMD ["go", "run", "./src"]

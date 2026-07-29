@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: development
+      PORT: 8080
+      # Uncomment to override the default 3-day cache expiry (in seconds).
+      # CACHE_EXPIRY_SECONDS: 259200
+    volumes:
+      # Bind-mount the repo so edits are picked up by `go run` without a
+      # rebuild, and so sbcwaste.db lands in the repo root like it does when
+      # running `go run ./src` directly on the host (it's already git-ignored).
+      - .:/app
+      # Named volumes for module/build caches so they survive across
+      # `docker compose up` runs instead of re-downloading every time.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

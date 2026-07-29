@@ -11,6 +11,15 @@
 # Note: The `scripts/deploy-githubactions.sh` script can be used to set up the
 #       necessary Google Cloud resources and will output the values for
 #       WIF_PROVIDER and WIF_SERVICE_ACCOUNT.
+#
+# Optionally, to also mirror the production image to Docker Hub once it's
+# deployed and verified healthy (main branch only), set:
+#
+# - DOCKERHUB_USERNAME: Docker Hub username/org to push to.
+# - DOCKERHUB_TOKEN: A Docker Hub access token (Account Settings > Security)
+#   with read/write access to that namespace. Do not use your account password.
+#
+# The dockerhub-mirror job is skipped automatically if these aren't set.
 
 name: Build and Deploy to Google Cloud Run
 
@@ -408,6 +417,51 @@ jobs:
             echo "Health check on root path failed after several attempts."
             exit 1
           fi
+
+  dockerhub-mirror:
+    name: Mirror prod image to Docker Hub
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    # Only mirrors the image that was just deployed to prod (main) and passed
+    # its post-deploy health check — never dev/test builds, and never an
+    # image that failed Trivy/gcp-vulnerability-check (deploy depends on
+    # those). Skips cleanly if Docker Hub credentials haven't been configured
+    # (see the secrets note at the top of this file).
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' &&
+      secrets.DOCKERHUB_USERNAME != '' &&
+      secrets.DOCKERHUB_TOKEN != ''
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev -q
+
+      - name: Pull the deployed image
+        run: docker pull ${{ needs.build.outputs.image_name }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push to Docker Hub
+        run: |
+          set -euo pipefail
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE }}"
+          docker tag "${{ needs.build.outputs.image_name }}" "${DOCKERHUB_IMAGE}:${{ github.sha }}"
+          docker tag "${{ needs.build.outputs.image_name }}" "${DOCKERHUB_IMAGE}:latest"
+          docker push "${DOCKERHUB_IMAGE}:${{ github.sha }}"
+          docker push "${DOCKERHUB_IMAGE}:latest"
 
   cleanup-images:
     name: Clean up old container images
