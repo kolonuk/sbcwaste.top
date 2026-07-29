@@ -332,15 +332,12 @@ jobs:
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo "APP_ENV=production" >> $GITHUB_ENV
             echo "SERVICE=sbcwaste-prod" >> $GITHUB_ENV
-            echo "DOMAIN=sbcwaste.top" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/dev" ]; then
             echo "APP_ENV=dev" >> $GITHUB_ENV
             echo "SERVICE=sbcwaste-dev" >> $GITHUB_ENV
-            echo "DOMAIN=dev.sbcwaste.top" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" == "refs/heads/test" ]; then
             echo "APP_ENV=test" >> $GITHUB_ENV
             echo "SERVICE=sbcwaste-test" >> $GITHUB_ENV
-            echo "DOMAIN=test.sbcwaste.top" >> $GITHUB_ENV
           fi
 
       - name: Authenticate to Google Cloud
@@ -350,6 +347,7 @@ jobs:
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Deploy to Cloud Run
+        id: deploy
         uses: google-github-actions/deploy-cloudrun@251330ba9a8a34bfbc1622895f42e1d53fd14522 # v2
         with:
           service: ${{ env.SERVICE }}
@@ -362,12 +360,19 @@ jobs:
 
       - name: Verify Application Health
         run: |
-          echo "Verifying application health for https://${{ env.DOMAIN }}"
+          # Hit the Cloud Run service's own *.run.app URL (steps.deploy.outputs.url),
+          # not the public custom domain. The custom domains are Cloudflare-proxied,
+          # and Cloudflare has been observed returning 403 specifically to GitHub
+          # Actions' runner IPs while the site is fully healthy for real users -
+          # that's a DNS/CDN concern, not a deployment-health concern, so checking
+          # the direct Cloud Run URL avoids conflating the two.
+          RUN_URL="${{ steps.deploy.outputs.url }}"
+          echo "Verifying application health for ${RUN_URL}"
           health_success=false
           for i in {1..10}; do
-            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/health")
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "${RUN_URL}/health")
             if [ "$response_code" == "200" ]; then
-              body=$(curl -s "https://${{ env.DOMAIN }}/health")
+              body=$(curl -s "${RUN_URL}/health")
               if echo "$body" | grep -q '{"status": "ok"}'; then
                 echo "Health check successful on /health endpoint."
                 health_success=true
@@ -388,7 +393,7 @@ jobs:
 
           root_success=false
           for i in {1..10}; do
-            response_code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ env.DOMAIN }}/")
+            response_code=$(curl -s -o /dev/null -w "%{http_code}" "${RUN_URL}/")
             if [ "$response_code" == "200" ]; then
               echo "Health check successful on root path."
               root_success=true
