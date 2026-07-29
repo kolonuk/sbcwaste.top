@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -21,7 +22,7 @@ import (
 const (
 	projectID      = "sbcwaste"
 	datasetID      = "bindays"
-	billingCSVFile = "billing_data.csv"
+	billingCSVFile = "static/data/billing_data.csv"
 )
 
 // CostData represents the monthly cost data.
@@ -31,6 +32,8 @@ type CostData struct {
 }
 
 // billingCache holds the cached billing data and its expiry time.
+// It's guarded by billingCacheMu since BillingHandler can be called concurrently.
+var billingCacheMu sync.Mutex
 var billingCache struct {
 	data       []CostData
 	lastFetch  time.Time
@@ -39,6 +42,9 @@ var billingCache struct {
 
 // BillingHandler handles requests to the /api/costs endpoint.
 func BillingHandler(w http.ResponseWriter, r *http.Request) {
+	billingCacheMu.Lock()
+	defer billingCacheMu.Unlock()
+
 	// Use a 24-hour cache.
 	if !billingCache.cacheValid || time.Since(billingCache.lastFetch) > 24*time.Hour {
 		log.Println("Billing cache expired or invalid, fetching and merging new data...")

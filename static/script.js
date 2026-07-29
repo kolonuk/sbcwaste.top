@@ -15,9 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
         icsLinkContainer.innerHTML = '';
         icsActionsContainer.innerHTML = '';
         const upcomingCollectionsGrid = document.getElementById('upcoming-collections-grid');
-        const upcomingCollectionsSection = document.getElementById('upcoming-collections');
+        const upcomingCollectionsPlaceholder = document.getElementById('upcoming-collections-placeholder');
         upcomingCollectionsGrid.innerHTML = '';
-        upcomingCollectionsSection.style.display = 'none';
+        upcomingCollectionsPlaceholder.classList.remove('hidden');
 
         if (!uprn) {
             return;
@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     table.appendChild(tbody);
 
                     upcomingCollectionsGrid.appendChild(table);
-                    upcomingCollectionsSection.style.display = 'block';
+                    upcomingCollectionsPlaceholder.classList.add('hidden');
                 }
             })
             .catch(error => {
