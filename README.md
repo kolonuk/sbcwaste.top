@@ -35,6 +35,10 @@ When running locally (`APP_ENV=development`), the service uses a local SQLite da
 
 When deployed to the Google Cloud environment, the service uses Firestore for caching. The application will automatically create and use a collection named `sbcwaste_cache` in your project's default Firestore database.
 
+### Self-hosted deployment (Redis)
+
+If `APP_ENV` isn't `development` and `REDIS_ADDR` (`host:port`) is set, the service caches to that Redis (or Redis-compatible) server instead of Firestore — no GCP project or credentials needed. `REDIS_PASSWORD` is optional. This is how the production image runs on the author's own `dadock` homelab stack, alongside the existing Google Cloud Run deployment, as a self-hosted mirror/failover — see the `dadock` repo for that stack's compose service, Redis container, and Pangolin tunnel setup; nothing further is needed in this repo beyond `REDIS_ADDR`.
+
 ### Cache Expiry
 
 The cache expiry time is configurable. By default, it is set to 3 days (259200 seconds). You can change this value by modifying the `CACHE_EXPIRY_SECONDS` input in the GitHub Actions workflow when running it manually.
@@ -52,6 +56,10 @@ To clear the Firestore cache in the cloud environment, you can delete the docume
 1.  Navigate to the **Firestore** page in the Google Cloud Console.
 2.  Select your project and you should see the `sbcwaste_cache` collection.
 3.  You can manually delete individual documents (cached items) or delete the entire collection by clicking the three dots next to the collection name and selecting "Delete collection".
+
+**Self-hosted (Redis):**
+
+Connect with `redis-cli` and `FLUSHDB`, or just delete individual keys — same as any other Redis deployment.
 
 ## Getting Started
 
@@ -136,4 +144,5 @@ useful data without `APP_ENV`/`PROJECT_ID`/Firestore credentials configured.
 *   The compiled binary (`sbcwaste`) is also git-ignored.
 *   The application uses `chromedp` for the icons feature. For **local development only**, you'll need Chrome/Chromium installed (e.g. `sudo apt install -y chromium-browser` on Ubuntu) — the deployed container does not have this, see [Known Issues](#known-issues).
 *   The production image is built from the provided `Dockerfile` (multi-stage build on `golang:1.26`, running as non-root on `gcr.io/distroless/static-debian13:nonroot`). For local development, use `Dockerfile.dev` / `docker-compose.yml` instead — see [Docker](#docker).
+*   That same `Dockerfile` is also built and pushed to `ghcr.io/kolonuk/sbcwaste.top` by `.github/workflows/ghcr-docker.yml`, independent of the Google Cloud Run pipeline — this is the image the `dadock` stack pulls for the self-hosted deployment described under [Caching](#self-hosted-deployment-redis).
 *   The CI/CD pipeline is defined in `.github/workflows/google-cloudrun-docker.yml` (build, lint, unit tests, gosec, govulncheck, Trivy, deploy to Cloud Run, post-deploy health check, and — for `main` only, once deploy succeeds — mirroring the image to Docker Hub).
