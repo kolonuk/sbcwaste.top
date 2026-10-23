@@ -239,7 +239,7 @@ func NewRedisCache() (*RedisCache, error) {
 		return nil, fmt.Errorf("REDIS_ADDR environment variable not set")
 	}
 
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second) // #nosec G704 -- REDIS_ADDR is an operator-set env var, not user input
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to redis at %s: %w", addr, err)
 	}
@@ -248,7 +248,7 @@ func NewRedisCache() (*RedisCache, error) {
 
 	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
 		if _, isNil, err := c.do("AUTH", password); err != nil || isNil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("redis AUTH failed: %w", err)
 		}
 	}
