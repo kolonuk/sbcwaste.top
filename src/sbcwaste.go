@@ -361,6 +361,8 @@ func WasteCollection(w http.ResponseWriter, r *http.Request) {
 				cacheSource := "Firestore"
 				if appEnv == "development" {
 					cacheSource = "SQLite"
+				} else if os.Getenv("REDIS_ADDR") != "" {
+					cacheSource = "Redis"
 				}
 
 				collections.CacheInfo = &CacheInfo{
