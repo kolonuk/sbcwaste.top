@@ -565,8 +565,17 @@ jobs:
             echo "$delete_list"
             IMAGE_BASE="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}"
             # gcloud accepts one image per invocation; loop to avoid "unrecognized arguments" error.
+            # A digest can be a manifest-list parent still referenced by a child
+            # manifest also in this registry — GAR refuses to delete it until
+            # that child is gone too (confirmed live, 2026-10-24: "manifest is
+            # referenced by parent manifests"). That's not a cleanup failure,
+            # just a deletion-order constraint this script doesn't control —
+            # don't let it abort the whole job; it becomes deletable once its
+            # child digest clears in a later run.
             while IFS= read -r digest; do
-              gcloud artifacts docker images delete "${IMAGE_BASE}@${digest}" --delete-tags -q
+              if ! gcloud artifacts docker images delete "${IMAGE_BASE}@${digest}" --delete-tags -q; then
+                echo "  WARNING: could not delete ${digest} (likely still referenced by a parent/child manifest) - skipping"
+              fi
             done <<< "$delete_list"
           else
             echo "No images to delete."
