@@ -16,6 +16,15 @@ push time (e.g. the `secrets` context is invalid in a job-level `if:`, valid
 only at step level) — only `actionlint` catches that before push, and it has
 already caused one failed `main` deploy in this repo.
 
+### Application Version
+
+The app is versioned as `MAJOR.MINOR.BUILD` (see the top of `CHANGELOG.md`
+for the full scheme). BUILD is fully automatic (git commit count at build
+time); MAJOR only changes when the user explicitly asks for it. When a
+commit adds a notable, user-visible feature, run the `version` skill
+(`.claude/skills/version/SKILL.md`) to bump MINOR and add a CHANGELOG entry
+alongside it.
+
 ### Version Changes
 
 **Before changing any version numbers** (Go version, dependencies, actions, etc.), always:
@@ -39,8 +48,11 @@ already caused one failed `main` deploy in this repo.
 
 ### Suggested Improvements
 
-- **Semantic Versioning and Changelogs:**
-  - Automatically generate a changelog and create a new release tag when a pull request is merged into `main`. This can be done using a tool like `semantic-release`. This will help you track changes and releases more effectively.
+- **Semantic Versioning and Changelogs:** ✅ Done — see `VERSION`,
+  `CHANGELOG.md`, and the `version` skill (`.claude/skills/version/SKILL.md`).
+  MAJOR.MINOR is manually maintained; BUILD is the git commit count, injected
+  at build time. A future improvement would be to also cut a git tag/GitHub
+  Release automatically when `VERSION` changes on `main`.
 - **Infrastructure as Code:**
   - Use a tool like Terraform to manage your Google Cloud resources. This will allow you to version your infrastructure and make it easier to create new environments.
 - **Container Security:**
