@@ -41,6 +41,13 @@ header h1 {
     text-align: left;
 }
 
+.site-version {
+    text-align: center;
+    font-size: 0.8em;
+    color: #999;
+    margin-top: 20px;
+}
+
 section {
     margin-bottom: 20px;
 }
@@ -237,6 +244,10 @@ a:hover {
 
     header h1, h2 {
         color: #bb86fc;
+    }
+
+    .site-version {
+        color: #777;
     }
 
     h2 {

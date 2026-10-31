@@ -81,7 +81,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: npx eslint static/script.js static/costs.js
+      - run: npx eslint static/script.js static/costs.js static/version.js
       - name: Audit npm dependencies
         run: npm audit --audit-level=high
 
@@ -153,11 +153,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history (not the default shallow clone) so BUILD_NUMBER below
+          # is the true total commit count, not just "1".
+          fetch-depth: 0
 
       - name: Build Docker image
         id: build-image
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
+          APP_VERSION=$(cat VERSION)
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          echo "Building version ${APP_VERSION}.${BUILD_NUMBER} (commit ${COMMIT_SHA})"
+          docker build \
+            --build-arg APP_VERSION="${APP_VERSION}" \
+            --build-arg BUILD_NUMBER="${BUILD_NUMBER}" \
+            --build-arg COMMIT_SHA="${COMMIT_SHA}" \
+            -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
           echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Authenticate to Google Cloud
@@ -467,15 +479,49 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Tag and push to Docker Hub
+      - name: Push amd64 image to Docker Hub
         if: steps.check.outputs.configured == 'true'
         run: |
           set -euo pipefail
           DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE }}"
-          docker tag "${{ needs.build.outputs.image_name }}" "${DOCKERHUB_IMAGE}:${{ github.sha }}"
-          docker tag "${{ needs.build.outputs.image_name }}" "${DOCKERHUB_IMAGE}:latest"
-          docker push "${DOCKERHUB_IMAGE}:${{ github.sha }}"
-          docker push "${DOCKERHUB_IMAGE}:latest"
+          docker tag "${{ needs.build.outputs.image_name }}" "${DOCKERHUB_IMAGE}:${{ github.sha }}-amd64"
+          docker push "${DOCKERHUB_IMAGE}:${{ github.sha }}-amd64"
+
+      # The amd64 image above is the exact one that already passed
+      # Trivy/gcp-vulnerability-check and was deployed to Cloud Run. arm64 has
+      # no equivalent production deployment to source a pre-built image from
+      # (Cloud Run doesn't run arm64), so it's cross-compiled fresh here from
+      # the same commit via buildx - no QEMU/emulation needed, since the Go
+      # build cross-compiles natively via GOARCH (see Dockerfile).
+      - name: Checkout
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.configured == 'true'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build and push arm64 image to Docker Hub
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE }}"
+          docker buildx build \
+            --platform linux/arm64 \
+            -t "${DOCKERHUB_IMAGE}:${{ github.sha }}-arm64" \
+            --push \
+            .
+
+      - name: Publish combined multi-arch manifest
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE }}"
+          docker buildx imagetools create \
+            -t "${DOCKERHUB_IMAGE}:${{ github.sha }}" \
+            -t "${DOCKERHUB_IMAGE}:latest" \
+            "${DOCKERHUB_IMAGE}:${{ github.sha }}-amd64" \
+            "${DOCKERHUB_IMAGE}:${{ github.sha }}-arm64"
 
   cleanup-images:
     name: Clean up old container images

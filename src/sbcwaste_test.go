@@ -65,6 +65,32 @@ func TestParseRequestParams(t *testing.T) {
 	}
 }
 
+func TestParseRequestParamsShowVersion(t *testing.T) {
+	testCases := []struct {
+		name     string
+		url      string
+		expected bool
+	}{
+		{name: "version=yes enables it", url: "/1234567890?version=yes", expected: true},
+		{name: "absent leaves it disabled", url: "/1234567890", expected: false},
+		{name: "other value leaves it disabled", url: "/1234567890?version=no", expected: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			params, err := parseRequestParams(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if params.showVersion != tc.expected {
+				t.Errorf("expected showVersion %v, got %v", tc.expected, params.showVersion)
+			}
+		})
+	}
+}
+
 func TestParseDate(t *testing.T) {
 	testCases := []struct {
 		name    string

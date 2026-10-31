@@ -22,7 +22,7 @@ name: Update Billing CSV
 
 on:
   schedule:
-    - cron: '0 6 * * *' # daily at 06:00 UTC; a no-op if nothing new has closed
+    - cron: '0 6 13 * *' # monthly on the 13th at 06:00 UTC
   workflow_dispatch: {}
 
 env:
