@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: npx eslint static/script.js static/costs.js
+      - run: npx eslint static/script.js static/costs.js static/version.js
       - name: Audit npm dependencies
         run: npm audit --audit-level=high
 
@@ -143,12 +143,24 @@ jobs:
       image_name: ${{ steps.build-image.outputs.image_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history (not the default shallow clone) so BUILD_NUMBER below
+          # is the true total commit count, not just "1".
+          fetch-depth: 0
 
       - name: Build Docker image
         id: build-image
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
+          APP_VERSION=$(cat VERSION)
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          echo "Building version ${APP_VERSION}.${BUILD_NUMBER} (commit ${COMMIT_SHA})"
+          docker build \
+            --build-arg APP_VERSION="${APP_VERSION}" \
+            --build-arg BUILD_NUMBER="${BUILD_NUMBER}" \
+            --build-arg COMMIT_SHA="${COMMIT_SHA}" \
+            -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }} .
           echo "image_name=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Authenticate to Google Cloud
