@@ -10,7 +10,7 @@
 #     which would otherwise fail without GCP credentials.
 #   - Runs via `go run` for a fast edit/run loop instead of building a static
 #     binary into a distroless image.
-FROM golang:1.26
+FROM golang:1.27
 
 WORKDIR /app
 
